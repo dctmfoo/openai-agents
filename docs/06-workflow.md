@@ -47,7 +47,14 @@ We track unused exports/files/deps with Knip.
 - Config lives in `knip.json` (entry points + project globs).
 - Suppressions:
   - Use JSDoc `@public` for exports that are intentionally public.
-  - Use JSDoc `@lintignore` (no hyphen) for one-off false positives. The config excludes this tag.
+- Use JSDoc `@lintignore` (no hyphen) for one-off false positives. The config excludes this tag.
+
+## Duplicate code checks (jscpd)
+
+We track copy/paste duplication with jscpd.
+
+- Run `pnpm check:dup` to scan for duplicates.
+- Config lives in `jscpd.json` (thresholds + exclusions).
 
 ## Complexity checks (ESLint + SonarJS)
 
