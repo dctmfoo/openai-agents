@@ -12,6 +12,7 @@
     "start:gateway": "node dist/gateway/start.js",
     "start:cli": "node dist/interfaces/cli/run.js",
     "check:deadcode": "knip",
+    "check:complexity": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -26,7 +27,10 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@typescript-eslint/parser": "^8.42.0",
     "@types/node": "^25.2.0",
+    "eslint": "^9.28.0",
+    "eslint-plugin-sonarjs": "^2.0.4",
     "knip": "^5.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",

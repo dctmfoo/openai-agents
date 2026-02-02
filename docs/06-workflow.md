@@ -49,6 +49,15 @@ We track unused exports/files/deps with Knip.
   - Use JSDoc `@public` for exports that are intentionally public.
   - Use JSDoc `@lintignore` (no hyphen) for one-off false positives. The config excludes this tag.
 
+## Complexity checks (ESLint + SonarJS)
+
+We track cyclomatic complexity (plus a cognitive-complexity sanity check) with ESLint.
+
+- Run `pnpm check:complexity` to see warnings.
+- Thresholds are warnings (no hard failures) so you can address incrementally.
+- Current thresholds are 15 for both cyclomatic and cognitive complexity.
+- If a warning fires, reduce complexity by extracting helpers, splitting long functions, or simplifying nested conditionals.
+
 ## Pre-commit hooks
 
 Enable fast checks locally:
