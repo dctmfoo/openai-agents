@@ -7,7 +7,8 @@ export type EventLogRecord = {
     | 'telegram.update'
     | 'prime.run.start'
     | 'prime.run.success'
-    | 'prime.run.error';
+    | 'prime.run.error'
+    | 'memory.daily.append';
   data: Record<string, unknown>;
 };
 
