@@ -17,6 +17,26 @@ export type GatewayOptions = {
   };
 };
 
+export const DEFAULT_GATEWAY_HOST = '127.0.0.1';
+export const DEFAULT_GATEWAY_PORT = 8787;
+
+type AdminBinding = {
+  host: string;
+  port: number;
+};
+
+const normalizeHost = (host?: string) => {
+  const trimmed = host?.trim();
+  return trimmed ? trimmed : DEFAULT_GATEWAY_HOST;
+};
+
+export function resolveAdminBinding(options?: GatewayOptions['admin']): AdminBinding {
+  return {
+    host: normalizeHost(options?.host),
+    port: options?.port ?? DEFAULT_GATEWAY_PORT,
+  };
+}
+
 export async function startGateway(options: GatewayOptions) {
   const telegramConfig = options.telegram;
   if (!telegramConfig?.token) {
@@ -29,8 +49,7 @@ export async function startGateway(options: GatewayOptions) {
     rootDir: telegramConfig.rootDir,
   });
 
-  const adminHost = options.admin?.host ?? '127.0.0.1';
-  const adminPort = options.admin?.port ?? 8787;
+  const { host: adminHost, port: adminPort } = resolveAdminBinding(options.admin);
   const haloHome = options.admin?.haloHome ?? telegramConfig.rootDir ?? process.cwd();
   const version =
     options.admin?.version ?? (await resolveVersion(haloHome));
