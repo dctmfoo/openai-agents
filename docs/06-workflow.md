@@ -38,3 +38,15 @@ We use multiple “roles” (can be humans or different models), but outputs mus
 Default: red → green → refactor.
 
 If something is hard to test end-to-end (Telegram), isolate pure logic and test that.
+
+## Pre-commit hooks
+
+Enable fast checks locally:
+
+- Run `scripts/dev/install-hooks.sh` from the repo root.
+
+The hook runs `pnpm test` and `pnpm build` before each commit.
+
+Opt-out for a single commit:
+
+- `SKIP_PRECOMMIT=1 git commit -m "message"`
