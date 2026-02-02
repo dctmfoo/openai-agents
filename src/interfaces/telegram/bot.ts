@@ -1,7 +1,9 @@
 import 'dotenv/config';
 
+import process from 'node:process';
 import { Bot } from 'grammy';
 import { runPrime } from '../../prime/prime.js';
+import { appendDailyNote } from '../../memory/openclawMemory.js';
 import { appendJsonl } from '../../utils/logging.js';
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -44,6 +46,13 @@ bot.on('message:text', async (ctx) => {
 
   try {
     const result = await runPrime(text, { channel: 'telegram', userId });
+
+    // OpenClaw-style: remember *everything* (raw transcript) in daily memory.
+    await appendDailyNote({ rootDir: process.cwd() }, `[user] ${text}`);
+    await appendDailyNote(
+      { rootDir: process.cwd() },
+      `[prime] ${String(result.finalOutput ?? '').trim() || '(no output)'}`,
+    );
 
     await appendJsonl(logPath, {
       ts: new Date().toISOString(),
