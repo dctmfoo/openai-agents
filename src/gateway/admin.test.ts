@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import { buildHaloHomePaths, createStatusHandler } from './admin.js';
 import { SessionStore } from '../sessions/sessionStore.js';
+import { mkdtemp } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
 type MockResponse = {
   statusCode: number;
@@ -27,9 +30,16 @@ const makeMockResponse = (): MockResponse => {
   return res;
 };
 
+const makeSessionStore = async () => {
+  // SessionStore persists to disk by default. Use an isolated temp directory in tests
+  // to avoid cross-test contamination from previous runs.
+  const baseDir = await mkdtemp(path.join(os.tmpdir(), 'halo-sessions-'));
+  return new SessionStore({ baseDir });
+};
+
 describe('gateway status handler', () => {
   it('returns ok for /healthz', async () => {
-    const store = new SessionStore();
+    const store = await makeSessionStore();
     const handler = createStatusHandler({
       startedAtMs: 0,
       host: '127.0.0.1',
@@ -49,7 +59,7 @@ describe('gateway status handler', () => {
 
   it('returns status payload for /status', async () => {
     const nowMs = 1_000_000;
-    const store = new SessionStore();
+    const store = await makeSessionStore();
     const context = {
       startedAtMs: nowMs - 5_000,
       host: '127.0.0.1',
@@ -84,7 +94,7 @@ describe('gateway status handler', () => {
   });
 
   it('returns scope ids for /sessions', async () => {
-    const store = new SessionStore();
+    const store = await makeSessionStore();
     store.getOrCreate('scope-2');
     store.getOrCreate('scope-1');
 
@@ -108,7 +118,7 @@ describe('gateway status handler', () => {
   });
 
   it('clears a session for /sessions/:scopeId/clear', async () => {
-    const store = new SessionStore();
+    const store = await makeSessionStore();
     const s1 = store.getOrCreate('scope-1');
     const s2 = store.getOrCreate('scope-2');
 
