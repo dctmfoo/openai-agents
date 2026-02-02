@@ -112,6 +112,10 @@ fi
 
 cd "$WORKTREE_DIR"
 
+# Ensure parent dirs exist for PRD/Progress paths that may be outside worktree
+# (e.g. tasks/agent-readiness/progress.txt).
+mkdir -p "$(dirname "$PRD_JSON")" "$(dirname "$PROGRESS_TXT")"
+
 if [[ ! -f "$PROGRESS_TXT" ]]; then
   echo "# progress.txt (append-only)" > "$PROGRESS_TXT"
   echo "" >> "$PROGRESS_TXT"
