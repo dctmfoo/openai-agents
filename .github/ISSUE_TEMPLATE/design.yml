@@ -1,0 +1,39 @@
+name: Design doc
+description: Propose or revise a design decision.
+title: "design: "
+labels: ["type:design"]
+body:
+  - type: textarea
+    id: decision
+    attributes:
+      label: Decision
+      description: What decision are we making?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why now? What constraints and requirements apply?
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Options considered
+      description: List options with pros/cons.
+      placeholder: "1) ...\n2) ..."
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: Final choice + rationale.
+    validations:
+      required: true
+  - type: textarea
+    id: followups
+    attributes:
+      label: Follow-ups
+      description: Tasks/issues to open after this decision.

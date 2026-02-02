@@ -1,0 +1,38 @@
+name: Feature
+description: Propose a new feature for the family-first companion.
+title: "feat: "
+labels: ["type:feature"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What should we build? Include UX and any SDK patterns to use (sessions/compaction/tools/guardrails).
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Bullet list of observable outcomes.
+      placeholder: "- [ ] ..."
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Tests
+      description: What deterministic unit tests are required? Any evals?
+      placeholder: "- [ ] unit: ...\n- [ ] eval: ..."
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks / Security
+      description: Any privacy boundary, policy, or safety risks?
