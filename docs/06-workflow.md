@@ -39,6 +39,16 @@ Default: red → green → refactor.
 
 If something is hard to test end-to-end (Telegram), isolate pure logic and test that.
 
+## Dead code checks (Knip)
+
+We track unused exports/files/deps with Knip.
+
+- Run `pnpm check:deadcode` to get a report.
+- Config lives in `knip.json` (entry points + project globs).
+- Suppressions:
+  - Use JSDoc `@public` for exports that are intentionally public.
+  - Use JSDoc `@lintignore` (no hyphen) for one-off false positives. The config excludes this tag.
+
 ## Pre-commit hooks
 
 Enable fast checks locally:
