@@ -1,0 +1,20 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Admin Console",
+  "version": "0.1.0",
+  "identifier": "com.openai.agents.admin",
+  "build": {
+    "frontendDist": "../frontend",
+    "devPath": "../frontend"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Admin Console",
+        "width": 900,
+        "height": 600,
+        "resizable": true
+      }
+    ]
+  }
+}

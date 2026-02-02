@@ -1,0 +1,58 @@
+:root {
+  color-scheme: light;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  background: #f5f2ea;
+  color: #1f1c16;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at top, #fff9f1, #efe6d8 65%, #e7dccb 100%);
+}
+
+.shell {
+  width: min(560px, 90vw);
+  padding: 32px 36px;
+  border-radius: 24px;
+  background: #ffffff;
+  box-shadow: 0 24px 60px rgba(31, 28, 22, 0.12);
+  display: grid;
+  gap: 16px;
+}
+
+.eyebrow {
+  font-size: 0.75rem;
+  letter-spacing: 0.2rem;
+  text-transform: uppercase;
+  color: #a76b2c;
+}
+
+h1 {
+  font-size: 2rem;
+}
+
+.lead {
+  font-size: 1rem;
+  color: #3d352c;
+}
+
+.status {
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #fff4dd;
+  border: 1px solid #f1d5a7;
+  font-weight: 600;
+}
+
+footer {
+  margin-top: 8px;
+  color: #7b6d5b;
+}
