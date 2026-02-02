@@ -26,6 +26,7 @@ bot.on('message:text', async (ctx) => {
   if (!text) return;
 
   const userId = String(ctx.from?.id ?? 'unknown');
+  const scopeId = `telegram:${ctx.chat.id}`;
 
   await appendJsonl(logPath, {
     ts: new Date().toISOString(),
@@ -41,11 +42,11 @@ bot.on('message:text', async (ctx) => {
   await appendJsonl(logPath, {
     ts: new Date().toISOString(),
     type: 'prime.run.start',
-    data: { channel: 'telegram', userId },
+    data: { channel: 'telegram', userId, scopeId },
   });
 
   try {
-    const result = await runPrime(text, { channel: 'telegram', userId });
+    const result = await runPrime(text, { channel: 'telegram', userId, scopeId });
 
     // Persist a lightweight transcript to the daily memory file.
     await appendDailyNote({ rootDir: process.cwd() }, `[user] ${text}`);
@@ -60,6 +61,7 @@ bot.on('message:text', async (ctx) => {
       data: {
         channel: 'telegram',
         userId,
+        scopeId,
         finalOutput: result.finalOutput,
       },
     });
@@ -81,13 +83,14 @@ bot.on('message:text', async (ctx) => {
 });
 
 bot.catch(async (err) => {
+  const e = err as any;
   await appendJsonl(logPath, {
     ts: new Date().toISOString(),
     type: 'prime.run.error',
     data: {
       channel: 'telegram',
       error: {
-        message: err.error?.message ?? String(err.error),
+        message: e?.error?.message ?? String(e?.error ?? err),
       },
     },
   });

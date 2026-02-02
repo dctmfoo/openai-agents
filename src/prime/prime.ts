@@ -2,9 +2,13 @@ import { Agent, run, tool } from '@openai/agents';
 import { z } from 'zod';
 import process from 'node:process';
 import { appendDailyNote, loadMarkdownContextFiles } from '../memory/memoryFiles.js';
+import { SessionStore } from '../sessions/sessionStore.js';
 
 export type PrimeRunOptions = {
+  /** Stable identifier for the current speaker (Telegram user id, etc.) */
   userId?: string;
+  /** Stable identifier for the conversation scope (e.g. Telegram chat id). */
+  scopeId?: string;
   channel?: 'telegram' | 'cli';
 };
 
@@ -61,14 +65,16 @@ export async function makePrimeAgent() {
   });
 }
 
+const defaultSessionStore = new SessionStore();
+
 export async function runPrime(input: string, opts: PrimeRunOptions = {}) {
   const agent = await makePrimeAgent();
 
+  const scopeId = opts.scopeId ?? `default:${opts.channel ?? 'unknown'}:${opts.userId ?? 'unknown'}`;
+  const session = defaultSessionStore.getOrCreate(scopeId);
+
   const result = await run(agent, input, {
-    metadata: {
-      userId: opts.userId,
-      channel: opts.channel,
-    },
+    session,
   });
 
   return {
