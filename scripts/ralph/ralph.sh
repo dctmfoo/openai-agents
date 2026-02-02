@@ -26,6 +26,16 @@ cd "$ROOT_DIR"
 PRD_JSON="${PRD_JSON:-$ROOT_DIR/prd.json}"
 PROGRESS_TXT="${PROGRESS_TXT:-$ROOT_DIR/progress.txt}"
 
+# Normalize paths to absolute so running inside a worktree still finds the files.
+ABS_PATH() {
+  python3 - <<'PY' "$1"
+import os,sys
+print(os.path.abspath(sys.argv[1]))
+PY
+}
+PRD_JSON="$(ABS_PATH "$PRD_JSON")"
+PROGRESS_TXT="$(ABS_PATH "$PROGRESS_TXT")"
+
 BASE_BRANCH="${RALPH_BASE_BRANCH:-main}"
 ALLOW_MAIN="${RALPH_ALLOW_MAIN:-0}"
 
