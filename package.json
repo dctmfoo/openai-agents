@@ -5,10 +5,11 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "dev:telegram": "tsx src/interfaces/telegram/bot.ts",
+    "dev:telegram": "tsx src/interfaces/telegram/start.ts",
     "dev:cli": "tsx src/interfaces/cli/run.ts",
     "build": "tsc -p tsconfig.json",
-    "start:telegram": "node dist/interfaces/telegram/bot.js",
+    "start:telegram": "node dist/interfaces/telegram/start.js",
+    "start:gateway": "node dist/gateway/start.js",
     "start:cli": "node dist/interfaces/cli/run.js",
     "test": "vitest run",
     "test:watch": "vitest"

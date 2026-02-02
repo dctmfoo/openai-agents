@@ -25,6 +25,13 @@ pnpm dev:telegram
 
 You should see `halo (telegram) starting…`.
 
+To run via the gateway runtime after building:
+
+```bash
+pnpm build
+pnpm start:gateway
+```
+
 ## Notes
 
 - Logs are written to `logs/events.jsonl` (gitignored).

@@ -1,100 +1,150 @@
-import 'dotenv/config';
-
 import process from 'node:process';
 import { Bot } from 'grammy';
 import { runPrime } from '../../prime/prime.js';
 import { appendDailyNote } from '../../memory/memoryFiles.js';
-import { appendJsonl } from '../../utils/logging.js';
+import { appendJsonl, type EventLogRecord } from '../../utils/logging.js';
 
-const token = process.env.TELEGRAM_BOT_TOKEN;
-if (!token) {
-  throw new Error('Missing TELEGRAM_BOT_TOKEN in environment');
-}
+export type TelegramContext = {
+  chat: { id: number; type: string };
+  message: { text?: string; message_id: number };
+  from?: { id?: number | string };
+  reply: (text: string) => Promise<unknown>;
+};
 
-const logDir = process.env.LOG_DIR || 'logs';
-const logPath = `${logDir}/events.jsonl`;
+export type TelegramBotLike = {
+  on: (event: 'message:text', handler: (ctx: TelegramContext) => Promise<void> | void) => void;
+  catch: (handler: (err: unknown) => Promise<void> | void) => void;
+  start: () => Promise<void>;
+};
 
-const bot = new Bot(token);
+export type TelegramAdapterDeps = {
+  runPrime: typeof runPrime;
+  appendDailyNote: typeof appendDailyNote;
+  appendJsonl: typeof appendJsonl;
+};
 
-bot.on('message:text', async (ctx) => {
-  const chatType = ctx.chat.type;
+export type TelegramAdapterOptions = {
+  token: string;
+  logDir?: string;
+  rootDir?: string;
+  bot?: TelegramBotLike;
+  now?: () => Date;
+  deps?: Partial<TelegramAdapterDeps>;
+};
 
-  // Private only (as per Wags requirement).
-  if (chatType !== 'private') return;
+export type TelegramAdapter = {
+  bot: TelegramBotLike;
+  start: () => Promise<void>;
+};
 
-  const text = ctx.message.text?.trim();
-  if (!text) return;
+export function createTelegramAdapter(options: TelegramAdapterOptions): TelegramAdapter {
+  const {
+    token,
+    logDir = 'logs',
+    rootDir = process.cwd(),
+    bot: providedBot,
+    now = () => new Date(),
+    deps = {},
+  } = options;
 
-  const userId = String(ctx.from?.id ?? 'unknown');
-  const scopeId = `telegram:${ctx.chat.id}`;
+  if (!token) {
+    throw new Error('Missing TELEGRAM_BOT_TOKEN in environment');
+  }
 
-  await appendJsonl(logPath, {
-    ts: new Date().toISOString(),
-    type: 'telegram.update',
-    data: {
-      chatId: ctx.chat.id,
-      userId,
-      messageId: ctx.message.message_id,
-      text,
-    },
-  });
+  const { runPrime: runPrimeImpl, appendDailyNote: appendDailyNoteImpl, appendJsonl: appendJsonlImpl } = {
+    runPrime,
+    appendDailyNote,
+    appendJsonl,
+    ...deps,
+  };
 
-  await appendJsonl(logPath, {
-    ts: new Date().toISOString(),
-    type: 'prime.run.start',
-    data: { channel: 'telegram', userId, scopeId },
-  });
+  const logPath = `${logDir}/events.jsonl`;
+  const bot = providedBot ?? (new Bot(token) as unknown as TelegramBotLike);
 
-  try {
-    const result = await runPrime(text, { channel: 'telegram', userId, scopeId });
+  const writeLog = async (record: EventLogRecord) => {
+    await appendJsonlImpl(logPath, record);
+  };
 
-    // Persist a lightweight transcript to the daily memory file.
-    await appendDailyNote({ rootDir: process.cwd() }, `[user] ${text}`);
-    await appendDailyNote(
-      { rootDir: process.cwd() },
-      `[prime] ${String(result.finalOutput ?? '').trim() || '(no output)'}`,
-    );
+  bot.on('message:text', async (ctx) => {
+    const chatType = ctx.chat.type;
 
-    await appendJsonl(logPath, {
-      ts: new Date().toISOString(),
-      type: 'prime.run.success',
+    // Private only (as per Wags requirement).
+    if (chatType !== 'private') return;
+
+    const text = ctx.message.text?.trim();
+    if (!text) return;
+
+    const userId = String(ctx.from?.id ?? 'unknown');
+    const scopeId = `telegram:${ctx.chat.id}`;
+
+    await writeLog({
+      ts: now().toISOString(),
+      type: 'telegram.update',
       data: {
-        channel: 'telegram',
+        chatId: ctx.chat.id,
         userId,
-        scopeId,
-        finalOutput: result.finalOutput,
+        messageId: ctx.message.message_id,
+        text,
       },
     });
 
-    await ctx.reply(String(result.finalOutput ?? '').trim() || '(no output)');
-  } catch (err) {
-    await appendJsonl(logPath, {
-      ts: new Date().toISOString(),
+    await writeLog({
+      ts: now().toISOString(),
+      type: 'prime.run.start',
+      data: { channel: 'telegram', userId, scopeId },
+    });
+
+    try {
+      const result = await runPrimeImpl(text, { channel: 'telegram', userId, scopeId });
+      const finalOutput = String(result.finalOutput ?? '').trim() || '(no output)';
+
+      // Persist a lightweight transcript to the daily memory file.
+      await appendDailyNoteImpl({ rootDir }, `[user] ${text}`);
+      await appendDailyNoteImpl({ rootDir }, `[prime] ${finalOutput}`);
+
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'prime.run.success',
+        data: {
+          channel: 'telegram',
+          userId,
+          scopeId,
+          finalOutput: result.finalOutput,
+        },
+      });
+
+      await ctx.reply(finalOutput);
+    } catch (err) {
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'prime.run.error',
+        data: {
+          channel: 'telegram',
+          userId,
+          error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : String(err),
+        },
+      });
+
+      await ctx.reply('Something went wrong while running Prime. Check logs.');
+    }
+  });
+
+  bot.catch(async (err) => {
+    const e = err as any;
+    await writeLog({
+      ts: now().toISOString(),
       type: 'prime.run.error',
       data: {
         channel: 'telegram',
-        userId,
-        error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : String(err),
+        error: {
+          message: e?.error?.message ?? String(e?.error ?? err),
+        },
       },
     });
-
-    await ctx.reply('Something went wrong while running Prime. Check logs.');
-  }
-});
-
-bot.catch(async (err) => {
-  const e = err as any;
-  await appendJsonl(logPath, {
-    ts: new Date().toISOString(),
-    type: 'prime.run.error',
-    data: {
-      channel: 'telegram',
-      error: {
-        message: e?.error?.message ?? String(e?.error ?? err),
-      },
-    },
   });
-});
 
-console.log('halo (telegram) starting…');
-await bot.start();
+  return {
+    bot,
+    start: () => bot.start(),
+  };
+}
