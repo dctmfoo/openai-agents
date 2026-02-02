@@ -73,9 +73,35 @@ Roadmap:
 - Prefer Conventional Commits:
   - `feat: …`, `fix: …`, `docs: …`, `chore: …`
 
-## Testing / evals (upcoming)
+## Test-Driven Development (TDD)
 
-We will add a small regression suite to ensure:
+This repo follows **TDD** wherever feasible:
+
+- Write a failing test first (red)
+- Implement the minimal change to pass (green)
+- Refactor for clarity (clean)
+
+If a change is hard to test (e.g., depends on Telegram network), isolate logic into pure functions/modules and test those.
+
+## Testing / evals
+
+We keep two layers of tests:
+
+1) **Deterministic tests** (fast, required)
+- file/memory merge & dedupe logic
+- session persistence adapters
+- tool policy decisions (allow/deny)
+
+2) **Behavioral evals** (slower, targeted)
+- LLM-as-judge checks for tone/consistency
+- regression prompts for memory distillation
+
+Planned commands (we will wire these soon):
+
+- `pnpm test` — unit tests
+- `pnpm evals` — behavioral evals
+
+Quality bar:
 - Prime behavior stays consistent.
 - Memory writeback rules don’t regress.
 - Safety boundaries remain enforced.
