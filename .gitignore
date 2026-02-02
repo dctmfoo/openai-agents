@@ -3,3 +3,7 @@ node_modules
 .DS_Store
 logs
 dist
+
+# Local memory / personal context (do not commit)
+MEMORY.md
+memory/
