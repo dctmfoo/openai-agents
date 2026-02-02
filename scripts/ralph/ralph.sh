@@ -26,6 +26,12 @@ cd "$ROOT_DIR"
 PRD_JSON="${PRD_JSON:-$ROOT_DIR/prd.json}"
 PROGRESS_TXT="${PROGRESS_TXT:-$ROOT_DIR/progress.txt}"
 
+BASE_BRANCH="${RALPH_BASE_BRANCH:-main}"
+ALLOW_MAIN="${RALPH_ALLOW_MAIN:-0}"
+
+# We run in an isolated worktree so humans can keep using the main repo checkout.
+WORKTREES_DIR="${RALPH_WORKTREES_DIR:-$ROOT_DIR/.ralph-worktrees}"
+
 MODEL="${CODEX_MODEL:-gpt-5.2-codex}"
 REASONING_EFFORT="${CODEX_REASONING_EFFORT:-high}"
 
@@ -52,6 +58,48 @@ require_cmd codex
 
 require_file "$PRD_JSON"
 require_file "$PROMPT_TEMPLATE"
+
+# Resolve the desired branch name from prd.json (Ralphy/Ralph-style).
+BRANCH_NAME="$(jq -r '.branchName // empty' "$PRD_JSON" 2>/dev/null || true)"
+if [[ -z "$BRANCH_NAME" || "$BRANCH_NAME" == "null" ]]; then
+  echo "Missing prd.json.branchName. Set it (recommended) or export RALPH_BRANCH_NAME." >&2
+  BRANCH_NAME="${RALPH_BRANCH_NAME:-}" 
+fi
+
+if [[ -z "$BRANCH_NAME" ]]; then
+  echo "Unable to determine branch name. Please set prd.json.branchName or RALPH_BRANCH_NAME." >&2
+  exit 1
+fi
+
+if [[ "$BRANCH_NAME" == "main" && "$ALLOW_MAIN" != "1" ]]; then
+  echo "Refusing to run Ralph on branch 'main'. Set prd.json.branchName to a feature branch or export RALPH_ALLOW_MAIN=1." >&2
+  exit 1
+fi
+
+mkdir -p "$WORKTREES_DIR"
+WORKTREE_DIR="$WORKTREES_DIR/$BRANCH_NAME"
+
+# Create/update the worktree (isolated checkout).
+git fetch --quiet origin "$BASE_BRANCH" || true
+if [[ ! -d "$WORKTREE_DIR/.git" && ! -d "$WORKTREE_DIR" ]]; then
+  mkdir -p "$WORKTREE_DIR"
+fi
+
+if [[ ! -d "$WORKTREE_DIR/.git" ]]; then
+  # If the branch exists on origin, use it; else branch off base.
+  if git show-ref --verify --quiet "refs/remotes/origin/$BRANCH_NAME"; then
+    git worktree add -B "$BRANCH_NAME" "$WORKTREE_DIR" "origin/$BRANCH_NAME"
+  else
+    git worktree add -B "$BRANCH_NAME" "$WORKTREE_DIR" "origin/$BASE_BRANCH"
+  fi
+fi
+
+# Speed: reuse the root node_modules if present.
+if [[ -d "$ROOT_DIR/node_modules" && ! -e "$WORKTREE_DIR/node_modules" ]]; then
+  ln -s "$ROOT_DIR/node_modules" "$WORKTREE_DIR/node_modules" 2>/dev/null || true
+fi
+
+cd "$WORKTREE_DIR"
 
 if [[ ! -f "$PROGRESS_TXT" ]]; then
   echo "# progress.txt (append-only)" > "$PROGRESS_TXT"
