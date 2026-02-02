@@ -11,3 +11,19 @@ dist
 # Local runtime config (do not commit)
 /config/*.json
 !/config/*.example.json
+
+# Compounding / automation artifacts (do not commit)
+/tasks/**
+/reports/**
+/archive/**
+/prd.json
+/progress.txt
+/compound-review.log
+/auto-compound.log
+
+# Keep examples/templates committed
+!/tasks/
+!/tasks/prd.example.md
+!/reports/
+!/reports/example.md
+!/prd.json.example

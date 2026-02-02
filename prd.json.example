@@ -1,0 +1,17 @@
+{
+  "branchName": "example/feature-name",
+  "userStories": [
+    {
+      "id": "S1",
+      "title": "Example story",
+      "description": "Do a small, well-scoped thing.",
+      "acceptanceCriteria": [
+        "Has unit tests",
+        "Passes pnpm test",
+        "Passes pnpm typecheck"
+      ],
+      "passes": false,
+      "notes": "Split if it doesn't fit in one iteration"
+    }
+  ]
+}
