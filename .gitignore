@@ -7,3 +7,7 @@ dist
 # Local memory / personal context (do not commit)
 /MEMORY.md
 /memory/
+
+# Local runtime config (do not commit)
+/config/*.json
+!/config/*.example.json

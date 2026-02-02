@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "familyId": "default",
+  "members": [
+    {
+      "memberId": "wags",
+      "displayName": "Wags",
+      "role": "parent",
+      "telegramUserIds": [889348242]
+    }
+  ],
+  "parentsGroup": {
+    "telegramChatId": null
+  }
+}

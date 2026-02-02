@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "nodes": [
+    {
+      "nodeId": "local-parent-node",
+      "memberId": "wags",
+      "transport": {
+        "kind": "local"
+      },
+      "capabilities": {
+        "mail": false,
+        "calendar": false,
+        "files": false
+      }
+    }
+  ]
+}
