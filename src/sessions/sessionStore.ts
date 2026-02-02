@@ -1,6 +1,7 @@
 import { OpenAIResponsesCompactionSession } from '@openai/agents';
 import type { Session } from '@openai/agents';
 import { FileBackedSession } from './fileBackedSession.js';
+import { getHaloHome } from '../runtime/haloHome.js';
 import path from 'node:path';
 
 export type SessionStoreOptions = {
@@ -35,7 +36,7 @@ export class SessionStore {
     this.opts = {
       compactionModel: opts.compactionModel ?? 'gpt-5.2',
       compactionCandidateItemsThreshold: opts.compactionCandidateItemsThreshold ?? 12,
-      baseDir: opts.baseDir ?? path.join(process.cwd(), 'logs', 'sessions'),
+      baseDir: opts.baseDir ?? path.join(getHaloHome(), 'sessions'),
     };
   }
 
