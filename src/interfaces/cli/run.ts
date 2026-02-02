@@ -2,7 +2,7 @@ import 'dotenv/config';
 
 import process from 'node:process';
 import { runPrime } from '../../prime/prime.js';
-import { appendDailyNote } from '../../memory/openclawMemory.js';
+import { appendDailyNote } from '../../memory/memoryFiles.js';
 
 const input = process.argv.slice(2).join(' ').trim();
 if (!input) {

@@ -1,6 +1,6 @@
 # AGENTS.md — Contributor & Agent Guide
 
-This repository is a **public, portfolio-quality reference implementation** of a doot-style personal companion built with the **OpenAI Agents SDK (TypeScript)**.
+This repository is a **public, portfolio-quality reference implementation** of a personal companion built with the **OpenAI Agents SDK (TypeScript)**.
 
 Primary interface: **Telegram (private chats only)**.
 
@@ -21,11 +21,11 @@ Primary interface: **Telegram (private chats only)**.
 - `src/prime/` — Prime (the main orchestrator agent).
 - `src/interfaces/telegram/` — Telegram bot interface (Grammy).
 - `src/interfaces/cli/` — CLI runner for local testing.
-- `src/memory/` — OpenClaw-style memory file loader/writer and (soon) distillation.
+- `src/memory/` — markdown memory file loader/writer and (soon) distillation.
 - `src/utils/` — logging utilities.
 - `docs/` — architecture notes, setup.
 - `memory/` — daily memory logs (`YYYY-MM-DD.md`).
-- `SOUL.md`, `USER.md`, `MEMORY.md` — OpenClaw-style context files loaded into Prime.
+- `SOUL.md`, `USER.md`, `MEMORY.md` — context files loaded into Prime.
 - `logs/` — runtime logs (`events.jsonl`, gitignored).
 
 ## Development commands
@@ -56,7 +56,7 @@ Copy `.env.example` → `.env` and set:
 - Don’t claim actions you didn’t take.
 - Never persist obvious secrets in memory files.
 
-## Memory model (OpenClaw-style)
+## Memory model (markdown files)
 
 - `MEMORY.md`: curated, lasting facts.
 - `memory/YYYY-MM-DD.md`: temporal facts / daily log.

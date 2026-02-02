@@ -15,9 +15,9 @@ Prime should behave like a *digital proxy*:
 - Fully autonomous long-running background agents without guardrails
 - Fancy UI/dashboard/voice on day 1
 
-## Design inspirations (Doot)
+## Design inspirations
 
-This project intentionally mirrors the architecture patterns in `dctmfoo/doot`:
+This project follows common personal-companion architecture patterns:
 
 - One main orchestrator (“Prime”)
 - Specialists delegated as tools or via handoffs (context isolation)

@@ -5,5 +5,5 @@ logs
 dist
 
 # Local memory / personal context (do not commit)
-MEMORY.md
-memory/
+/MEMORY.md
+/memory/

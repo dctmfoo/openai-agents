@@ -2,7 +2,7 @@ import { readFile, appendFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-export type OpenClawMemoryPaths = {
+export type MemoryPaths = {
   rootDir: string; // repo root
 };
 
@@ -10,7 +10,7 @@ function isoDate(d = new Date()) {
   return d.toISOString().slice(0, 10);
 }
 
-export function getDailyMemoryPath(paths: OpenClawMemoryPaths, date = new Date()) {
+export function getDailyMemoryPath(paths: MemoryPaths, date = new Date()) {
   return join(paths.rootDir, 'memory', `${isoDate(date)}.md`);
 }
 
@@ -19,7 +19,7 @@ async function safeRead(path: string): Promise<string> {
   return await readFile(path, 'utf8');
 }
 
-export async function loadOpenClawContext(paths: OpenClawMemoryPaths) {
+export async function loadMarkdownContextFiles(paths: MemoryPaths) {
   const soul = await safeRead(join(paths.rootDir, 'SOUL.md'));
   const user = await safeRead(join(paths.rootDir, 'USER.md'));
   const longTerm = await safeRead(join(paths.rootDir, 'MEMORY.md'));
@@ -51,7 +51,7 @@ function sanitize(text: string): string {
 }
 
 export async function appendDailyNote(
-  paths: OpenClawMemoryPaths,
+  paths: MemoryPaths,
   note: string,
   date = new Date(),
 ) {
