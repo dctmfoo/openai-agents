@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { SessionStore } from '../sessions/sessionStore.js';
 
 export type HaloHomePaths = {
   root: string;
@@ -26,6 +27,7 @@ export type StatusContext = {
   port: number;
   version: string | null;
   haloHome: HaloHomePaths;
+  sessionStore: SessionStore;
   now?: () => number;
 };
 
@@ -36,13 +38,14 @@ export type StatusHandler = (
     setHeader: (name: string, value: string) => void;
     end: (body?: string) => void;
   },
-) => void;
+) => void | Promise<void>;
 
 export type AdminServerOptions = {
   host: string;
   port: number;
   haloHome: string;
   version: string | null;
+  sessionStore: SessionStore;
   startedAtMs?: number;
   now?: () => number;
 };
@@ -93,21 +96,58 @@ export function createStatusPayload(context: StatusContext): GatewayStatus {
 }
 
 export function createStatusHandler(context: StatusContext): StatusHandler {
-  return (req, res) => {
-    const path = req.url?.split('?')[0];
-
-    if (req.method !== 'GET' || path !== '/status') {
-      res.statusCode = 404;
+  return async (req, res) => {
+    const sendJson = (statusCode: number, payload: unknown) => {
+      res.statusCode = statusCode;
       res.setHeader('content-type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify({ error: 'not_found' }));
-      return;
+      res.end(JSON.stringify(payload));
+    };
+
+    try {
+      const path = req.url?.split('?')[0] ?? '';
+
+      if (req.method === 'GET' && path === '/healthz') {
+        // Keep this super lightweight so it stays reliable.
+        sendJson(200, { ok: true });
+        return;
+      }
+
+      if (req.method === 'GET' && path === '/status') {
+        const payload = createStatusPayload(context);
+        sendJson(200, payload);
+        return;
+      }
+
+      if (req.method === 'GET' && path === '/sessions') {
+        const scopeIds = context.sessionStore.listScopeIds().sort();
+        sendJson(200, scopeIds);
+        return;
+      }
+
+      if (req.method === 'POST' && path.startsWith('/sessions/') && path.endsWith('/clear')) {
+        const rawScopeId = path.slice('/sessions/'.length, -'/clear'.length);
+        if (!rawScopeId) {
+          sendJson(404, { error: 'not_found' });
+          return;
+        }
+
+        let scopeId: string;
+        try {
+          scopeId = decodeURIComponent(rawScopeId);
+        } catch {
+          sendJson(400, { error: 'invalid_scope_id' });
+          return;
+        }
+
+        await context.sessionStore.clear(scopeId);
+        sendJson(200, { ok: true, scopeId });
+        return;
+      }
+
+      sendJson(404, { error: 'not_found' });
+    } catch {
+      sendJson(500, { error: 'internal_error' });
     }
-
-    const payload = createStatusPayload(context);
-
-    res.statusCode = 200;
-    res.setHeader('content-type', 'application/json; charset=utf-8');
-    res.end(JSON.stringify(payload));
   };
 }
 
@@ -118,11 +158,14 @@ export async function startAdminServer(options: AdminServerOptions): Promise<Adm
     port: options.port,
     version: options.version,
     haloHome: buildHaloHomePaths(options.haloHome),
+    sessionStore: options.sessionStore,
     now: options.now,
   };
 
   const handler = createStatusHandler(context);
-  const server = createServer((req, res) => handler(req, res));
+  const server = createServer((req, res) => {
+    void handler(req, res);
+  });
 
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);

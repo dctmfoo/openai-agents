@@ -1,5 +1,6 @@
 import { createTelegramAdapter } from '../interfaces/telegram/bot.js';
 import { resolveVersion, startAdminServer } from './admin.js';
+import { defaultSessionStore } from '../sessions/sessionStore.js';
 
 export type GatewayOptions = {
   telegram?: {
@@ -39,6 +40,7 @@ export async function startGateway(options: GatewayOptions) {
     port: adminPort,
     haloHome,
     version,
+    sessionStore: defaultSessionStore,
     startedAtMs: options.admin?.startedAtMs,
   });
 

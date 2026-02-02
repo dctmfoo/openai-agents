@@ -57,8 +57,14 @@ export class SessionStore {
     await session.clearSession();
   }
 
+  listScopeIds(): string[] {
+    return Array.from(this.sessions.keys());
+  }
+
   /** Useful for tests/diagnostics. */
   size(): number {
     return this.sessions.size;
   }
 }
+
+export const defaultSessionStore = new SessionStore();

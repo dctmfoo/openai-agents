@@ -2,7 +2,7 @@ import { Agent, run, tool } from '@openai/agents';
 import { z } from 'zod';
 import process from 'node:process';
 import { appendDailyNote, loadMarkdownContextFiles } from '../memory/memoryFiles.js';
-import { SessionStore } from '../sessions/sessionStore.js';
+import { defaultSessionStore } from '../sessions/sessionStore.js';
 
 export type PrimeRunOptions = {
   /** Stable identifier for the current speaker (Telegram user id, etc.) */
@@ -64,8 +64,6 @@ export async function makePrimeAgent() {
     tools: [getTime, rememberDaily],
   });
 }
-
-const defaultSessionStore = new SessionStore();
 
 export async function runPrime(input: string, opts: PrimeRunOptions = {}) {
   const agent = await makePrimeAgent();
