@@ -9,11 +9,12 @@ This project runs a Telegram bot for **private chats only**.
 
 ## 2) Configure environment
 
-Create `.env` (or export env vars) with:
+Copy `.env.example` to `.env` (or export env vars) with:
 
 ```bash
-OPENAI_API_KEY=...
 TELEGRAM_BOT_TOKEN=...
+HALO_HOME=...
+OPENAI_API_KEY=...
 ```
 
 ## 3) Run locally
@@ -36,3 +37,4 @@ pnpm start:gateway
 
 - Logs are written to `logs/events.jsonl` (gitignored).
 - Group chats are ignored.
+- `OPENAI_API_KEY` is optional if you authenticate via Codex device OAuth.
