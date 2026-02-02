@@ -1,0 +1,30 @@
+{
+  "name": "openai-agents",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev:telegram": "tsx src/interfaces/telegram/bot.ts",
+    "dev:cli": "tsx src/interfaces/cli/run.ts",
+    "build": "tsc -p tsconfig.json",
+    "start:telegram": "node dist/interfaces/telegram/bot.js",
+    "start:cli": "node dist/interfaces/cli/run.js",
+    "test": "node -e \"console.log('no tests yet')\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.28.1",
+  "dependencies": {
+    "@openai/agents": "^0.4.4",
+    "dotenv": "^17.2.3",
+    "grammy": "^1.39.3",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

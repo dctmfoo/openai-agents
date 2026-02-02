@@ -12,6 +12,7 @@ Phase 0 (docs + plan) in progress.
 
 - [Vision](docs/00-vision.md)
 - [Scope (v1)](docs/01-scope.md)
+- [Telegram setup (halo)](docs/02-telegram-setup.md)
 
 ## Principles (porting from doot)
 
