@@ -1,5 +1,8 @@
-import { MemorySession, OpenAIResponsesCompactionSession } from '@openai/agents';
+import { OpenAIResponsesCompactionSession } from '@openai/agents';
 import type { Session } from '@openai/agents';
+import { FileBackedSession } from './fileBackedSession.js';
+import { getHaloHome } from '../runtime/haloHome.js';
+import path from 'node:path';
 
 export type SessionStoreOptions = {
   /**
@@ -13,14 +16,17 @@ export type SessionStoreOptions = {
    * This is a simple heuristic; we can later switch to a token-based budget.
    */
   compactionCandidateItemsThreshold?: number;
+
+  /**
+   * Base directory for persisted session files.
+   */
+  baseDir?: string;
 };
 
 /**
- * In-memory mapping of `scopeId -> Session`.
+ * Mapping of `scopeId -> Session`, persisted via FileBackedSession.
  *
- * v1: MemorySession wrapped by OpenAIResponsesCompactionSession.
- *
- * NOTE: This does not persist across process restarts yet.
+ * v1: FileBackedSession wrapped by OpenAIResponsesCompactionSession.
  */
 export class SessionStore {
   private readonly sessions = new Map<string, Session>();
@@ -30,6 +36,7 @@ export class SessionStore {
     this.opts = {
       compactionModel: opts.compactionModel ?? 'gpt-5.2',
       compactionCandidateItemsThreshold: opts.compactionCandidateItemsThreshold ?? 12,
+      baseDir: opts.baseDir ?? path.join(getHaloHome(), 'sessions'),
     };
   }
 
@@ -37,7 +44,10 @@ export class SessionStore {
     const existing = this.sessions.get(scopeId);
     if (existing) return existing;
 
-    const underlyingSession = new MemorySession({ sessionId: scopeId });
+    const underlyingSession = new FileBackedSession({
+      sessionId: scopeId,
+      baseDir: this.opts.baseDir,
+    });
 
     const wrapped = new OpenAIResponsesCompactionSession({
       underlyingSession,
