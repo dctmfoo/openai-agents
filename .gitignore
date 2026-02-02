@@ -21,6 +21,10 @@ dist
 /compound-review.log
 /auto-compound.log
 
+# Ralph runner local state
+/.ralph-worktrees/
+/.ralph-sandboxes/
+
 # Keep examples/templates committed
 !/tasks/
 !/tasks/prd.example.md
