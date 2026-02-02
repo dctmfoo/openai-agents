@@ -50,6 +50,83 @@ h1 {
   background: #fff4dd;
   border: 1px solid #f1d5a7;
   font-weight: 600;
+  display: grid;
+  gap: 12px;
+}
+
+.status__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.status__title {
+  font-size: 0.95rem;
+}
+
+.status__gateway {
+  font-size: 0.85rem;
+  color: #7a5d38;
+  margin-top: 4px;
+}
+
+.status__meta {
+  font-size: 0.85rem;
+  color: #6b5f4c;
+  white-space: nowrap;
+}
+
+.status__payload {
+  font-family: "IBM Plex Mono", "SFMono-Regular", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  font-size: 0.85rem;
+  background: #fffaf1;
+  border: 1px solid #f0ddc1;
+  border-radius: 10px;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #3b3328;
+}
+
+.status__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.status__button {
+  border: 1px solid #cda26a;
+  background: #fff1d6;
+  color: #5c3b12;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.status__button:hover {
+  background: #ffe6c1;
+}
+
+.status__button:focus-visible {
+  outline: 2px solid #b8742d;
+  outline-offset: 2px;
+}
+
+.status--error {
+  background: #ffe6e6;
+  border-color: #e9a2a2;
+}
+
+.status--error .status__gateway {
+  color: #9c3d3d;
+}
+
+.status--error .status__payload {
+  border-color: #e9a2a2;
+  background: #fff3f3;
+  color: #7a2d2d;
 }
 
 footer {

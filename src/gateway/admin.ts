@@ -99,6 +99,7 @@ export function createStatusHandler(context: StatusContext): StatusHandler {
   return async (req, res) => {
     const sendJson = (statusCode: number, payload: unknown) => {
       res.statusCode = statusCode;
+      res.setHeader('access-control-allow-origin', '*');
       res.setHeader('content-type', 'application/json; charset=utf-8');
       res.end(JSON.stringify(payload));
     };

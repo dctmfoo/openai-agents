@@ -107,6 +107,11 @@ Distillation triggers (planned):
 - on idle, and/or
 - manual admin command
 
+## 6a) Admin UI (Tauri)
+
+- The desktop admin app reads gateway status via `GET /status`.
+- Default gateway base is `http://127.0.0.1:8787` (override with `?gateway=` in the admin URL).
+
 ## 7) Security boundaries (summary)
 
 - Treat all chat text as untrusted input.

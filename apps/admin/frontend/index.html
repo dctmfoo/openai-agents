@@ -13,7 +13,19 @@
         <h1>Admin Console</h1>
       </header>
       <p class="lead">This is a minimal desktop shell. Wire in admin tooling here.</p>
-      <div class="status" role="status">Window loaded</div>
+      <div class="status" role="status" aria-live="polite" data-status-card>
+        <div class="status__header">
+          <div>
+            <div class="status__title" data-status-title>Gateway status</div>
+            <div class="status__gateway" data-status-gateway>http://127.0.0.1:8787</div>
+          </div>
+          <div class="status__meta" data-status-meta>Checking...</div>
+        </div>
+        <pre class="status__payload" data-status-payload>Loading gateway status...</pre>
+        <div class="status__actions">
+          <button class="status__button" type="button" data-status-retry>Retry</button>
+        </div>
+      </div>
       <footer>
         <small>apps/admin/frontend</small>
       </footer>
