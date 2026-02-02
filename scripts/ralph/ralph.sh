@@ -81,16 +81,27 @@ WORKTREE_DIR="$WORKTREES_DIR/$BRANCH_NAME"
 
 # Create/update the worktree (isolated checkout).
 git fetch --quiet origin "$BASE_BRANCH" || true
-if [[ ! -d "$WORKTREE_DIR/.git" && ! -d "$WORKTREE_DIR" ]]; then
-  mkdir -p "$WORKTREE_DIR"
-fi
+# If a worktree already exists for this branch, reuse it. Otherwise create it.
+if [[ -d "$WORKTREE_DIR/.git" ]]; then
+  echo "Reusing existing worktree: $WORKTREE_DIR"
+else
+  # If the branch is already checked out in some other worktree, reuse that path.
+  EXISTING_PATH="$(git worktree list --porcelain | awk -v b="refs/heads/$BRANCH_NAME" '
+    $1=="worktree"{p=$2}
+    $1=="branch" && $2==b{print p; exit}
+  ')"
 
-if [[ ! -d "$WORKTREE_DIR/.git" ]]; then
-  # If the branch exists on origin, use it; else branch off base.
-  if git show-ref --verify --quiet "refs/remotes/origin/$BRANCH_NAME"; then
-    git worktree add -B "$BRANCH_NAME" "$WORKTREE_DIR" "origin/$BRANCH_NAME"
+  if [[ -n "$EXISTING_PATH" ]]; then
+    echo "Branch '$BRANCH_NAME' already has a worktree at: $EXISTING_PATH"
+    WORKTREE_DIR="$EXISTING_PATH"
   else
-    git worktree add -B "$BRANCH_NAME" "$WORKTREE_DIR" "origin/$BASE_BRANCH"
+    mkdir -p "$WORKTREE_DIR"
+    # If the branch exists on origin, use it; else branch off base.
+    if git show-ref --verify --quiet "refs/remotes/origin/$BRANCH_NAME"; then
+      git worktree add -B "$BRANCH_NAME" "$WORKTREE_DIR" "origin/$BRANCH_NAME"
+    else
+      git worktree add -B "$BRANCH_NAME" "$WORKTREE_DIR" "origin/$BASE_BRANCH"
+    fi
   fi
 fi
 
