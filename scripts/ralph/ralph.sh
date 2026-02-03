@@ -66,7 +66,13 @@ require_cmd git
 require_cmd pnpm
 require_cmd codex
 
-require_file "$PRD_JSON"
+require_file "$PRD_JSON" || {
+  echo "Hint: set PRD_JSON/PROGRESS_TXT explicitly, e.g.:" >&2
+  echo "  PRD_JSON=tasks/<name>/prd.json PROGRESS_TXT=tasks/<name>/progress.txt ./scripts/ralph/ralph.sh" >&2
+  echo "Available PRDs under tasks/:" >&2
+  find "$ROOT_DIR/tasks" -maxdepth 3 -name prd.json -print 2>/dev/null || true
+  exit 1
+}
 require_file "$PROMPT_TEMPLATE"
 
 # Resolve the desired branch name from prd.json (Ralphy/Ralph-style).
