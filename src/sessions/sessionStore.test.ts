@@ -25,7 +25,7 @@ describe('SessionStore', () => {
   });
 
   it('returns the same session instance for the same scopeId', async () => {
-    const store = new SessionStore({ baseDir: tempDir });
+    const store = new SessionStore({ baseDir: tempDir, compactionEnabled: false });
 
     const a1 = store.getOrCreate('scope-a');
     const a2 = store.getOrCreate('scope-a');
@@ -34,7 +34,7 @@ describe('SessionStore', () => {
   });
 
   it('isolates history across different scopeIds', async () => {
-    const store = new SessionStore({ baseDir: tempDir });
+    const store = new SessionStore({ baseDir: tempDir, compactionEnabled: false });
 
     const s1 = store.getOrCreate('scope-1');
     const s2 = store.getOrCreate('scope-2');
@@ -51,7 +51,7 @@ describe('SessionStore', () => {
   });
 
   it('can clear a scope session without affecting others', async () => {
-    const store = new SessionStore({ baseDir: tempDir });
+    const store = new SessionStore({ baseDir: tempDir, compactionEnabled: false });
 
     const s1 = store.getOrCreate('scope-1');
     const s2 = store.getOrCreate('scope-2');
@@ -70,11 +70,11 @@ describe('SessionStore', () => {
   });
 
   it('reloads history when a new store is created', async () => {
-    const store1 = new SessionStore({ baseDir: tempDir });
+    const store1 = new SessionStore({ baseDir: tempDir, compactionEnabled: false });
     const session1 = store1.getOrCreate('scope-persist');
     await session1.addItems([userMessage('persist me')]);
 
-    const store2 = new SessionStore({ baseDir: tempDir });
+    const store2 = new SessionStore({ baseDir: tempDir, compactionEnabled: false });
     const session2 = store2.getOrCreate('scope-persist');
 
     expect(await session2.getItems()).toEqual([userMessage('persist me')]);
