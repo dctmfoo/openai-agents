@@ -40,6 +40,48 @@
           <button class="status__button" type="button" data-sessions-retry>Refresh</button>
         </div>
       </div>
+      <div class="status" role="status" aria-live="polite" data-policy-card>
+        <div class="status__header">
+          <div>
+            <div class="status__title" data-policy-title>Policy status</div>
+            <div class="status__gateway" data-policy-gateway>http://127.0.0.1:8787</div>
+          </div>
+          <div class="status__meta" data-policy-meta>Checking...</div>
+        </div>
+        <div class="status__payload" data-policy-list>Loading policy status...</div>
+        <pre class="status__payload" data-policy-payload hidden></pre>
+        <div class="status__actions">
+          <button class="status__button" type="button" data-policy-retry>Refresh</button>
+        </div>
+      </div>
+      <div class="status" role="status" aria-live="polite" data-transcript-card>
+        <div class="status__header">
+          <div>
+            <div class="status__title" data-transcript-title>Transcript tail (local)</div>
+            <div class="status__gateway" data-transcript-gateway>http://127.0.0.1:8787</div>
+          </div>
+          <div class="status__meta" data-transcript-meta>Waiting...</div>
+        </div>
+        <div class="transcript__controls">
+          <label class="field">
+            <span class="field__label">Scope id</span>
+            <input class="field__input" data-transcript-scope placeholder="telegram:dm:member" />
+          </label>
+          <label class="field field--compact">
+            <span class="field__label">Lines</span>
+            <input
+              class="field__input"
+              data-transcript-lines
+              type="number"
+              min="1"
+              max="200"
+              value="25"
+            />
+          </label>
+          <button class="status__button" type="button" data-transcript-fetch>Fetch tail</button>
+        </div>
+        <pre class="status__payload" data-transcript-payload>Waiting for scope selection...</pre>
+      </div>
       <footer>
         <small>apps/admin/frontend</small>
       </footer>

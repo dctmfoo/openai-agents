@@ -8,12 +8,12 @@ import type {
 import { isOpenAIResponsesCompactionAwareSession } from '@openai/agents';
 import { TranscriptStore } from './transcriptStore.js';
 
-export type TranscriptSessionOptions = {
+type TranscriptSessionOptions = {
   session: Session;
   transcript: TranscriptStore;
 };
 
-export class TranscriptSession implements Session {
+class TranscriptSession implements Session {
   protected readonly session: Session;
   protected readonly transcript: TranscriptStore;
 
@@ -47,7 +47,7 @@ export class TranscriptSession implements Session {
   }
 }
 
-export class TranscriptCompactionSession
+class TranscriptCompactionSession
   extends TranscriptSession
   implements OpenAIResponsesCompactionAwareSession
 {

@@ -1,10 +1,12 @@
 import { OpenAIResponsesCompactionSession } from '@openai/agents';
 import type { Session } from '@openai/agents';
+import { rm } from 'node:fs/promises';
+import path from 'node:path';
+import { getHaloHome } from '../runtime/haloHome.js';
 import { FileBackedSession } from './fileBackedSession.js';
+import { hashSessionId } from './sessionHash.js';
 import { TranscriptStore } from './transcriptStore.js';
 import { wrapWithTranscript } from './transcriptSession.js';
-import { getHaloHome } from '../runtime/haloHome.js';
-import path from 'node:path';
 
 export type SessionStoreOptions = {
   /**
@@ -106,6 +108,18 @@ export class SessionStore {
     const session = this.sessions.get(scopeId);
     if (!session) return;
     await session.clearSession();
+  }
+
+  async purge(scopeId: string): Promise<void> {
+    const session = this.sessions.get(scopeId);
+    if (session) {
+      await session.clearSession();
+      this.sessions.delete(scopeId);
+    }
+
+    const hashed = hashSessionId(scopeId);
+    await rm(path.join(this.opts.baseDir, `${hashed}.jsonl`), { force: true });
+    await rm(path.join(this.opts.transcriptsDir, `${hashed}.jsonl`), { force: true });
   }
 
   listScopeIds(): string[] {

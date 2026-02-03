@@ -1,6 +1,8 @@
 import { createServer, type Server } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { loadFamilyConfig } from '../runtime/familyConfig.js';
+import { hashSessionId } from '../sessions/sessionHash.js';
 import type { SessionStore } from '../sessions/sessionStore.js';
 
 export type HaloHomePaths = {
@@ -19,6 +21,20 @@ type GatewayStatus = {
     host: string;
     port: number;
   };
+};
+
+type PolicyScopeStatus = {
+  scopeId: string;
+  scopeType: 'dm' | 'parents_group';
+  allow: boolean;
+  reason?: 'group_not_approved' | 'child_in_parents_group';
+  memberId?: string;
+  role?: 'parent' | 'child';
+  displayName?: string;
+};
+
+type PolicyStatusPayload = {
+  scopes: PolicyScopeStatus[];
 };
 
 export type StatusContext = {
@@ -67,6 +83,48 @@ const parseJsonLine = (line: string) => {
   } catch {
     return line;
   }
+};
+
+const buildPolicyStatus = async (haloHome: string): Promise<PolicyStatusPayload> => {
+  const family = await loadFamilyConfig({ haloHome });
+  const scopes: PolicyScopeStatus[] = [];
+
+  for (const member of family.members) {
+    scopes.push({
+      scopeId: `telegram:dm:${member.memberId}`,
+      scopeType: 'dm',
+      allow: true,
+      memberId: member.memberId,
+      role: member.role,
+      displayName: member.displayName,
+    });
+  }
+
+  const parentsGroupId = family.parentsGroup?.telegramChatId ?? null;
+  if (!parentsGroupId) {
+    scopes.push({
+      scopeId: 'telegram:parents_group:unset',
+      scopeType: 'parents_group',
+      allow: false,
+      reason: 'group_not_approved',
+    });
+    return { scopes };
+  }
+
+  for (const member of family.members) {
+    const allow = member.role === 'parent';
+    scopes.push({
+      scopeId: `telegram:parents_group:${parentsGroupId}`,
+      scopeType: 'parents_group',
+      allow,
+      reason: allow ? undefined : 'child_in_parents_group',
+      memberId: member.memberId,
+      role: member.role,
+      displayName: member.displayName,
+    });
+  }
+
+  return { scopes };
 };
 
 const readTail = async (path: string, lines: number) => {
@@ -188,6 +246,12 @@ export function createStatusHandler(context: StatusContext): StatusHandler {
         return;
       }
 
+      if (req.method === 'GET' && path === '/policy/status') {
+        const payload = await buildPolicyStatus(context.haloHome.root);
+        sendJson(200, payload);
+        return;
+      }
+
       if (req.method === 'GET' && path === '/events/tail') {
         if (!isLoopbackAddress(req.socket?.remoteAddress)) {
           sendJson(403, { error: 'forbidden' });
@@ -198,6 +262,30 @@ export function createStatusHandler(context: StatusContext): StatusHandler {
         const lines = parseTailLines(url.searchParams.get('lines'));
         const logPath = join(context.haloHome.logs, 'events.jsonl');
         const payload = await readTail(logPath, lines);
+        sendJson(200, payload);
+        return;
+      }
+
+      if (req.method === 'GET' && path === '/transcripts/tail') {
+        if (!isLoopbackAddress(req.socket?.remoteAddress)) {
+          sendJson(403, { error: 'forbidden' });
+          return;
+        }
+
+        const url = new URL(req.url ?? '', 'http://localhost');
+        const scopeId = url.searchParams.get('scopeId')?.trim() ?? '';
+        if (!scopeId) {
+          sendJson(400, { error: 'missing_scope_id' });
+          return;
+        }
+
+        const lines = parseTailLines(url.searchParams.get('lines'));
+        const transcriptPath = join(
+          context.haloHome.root,
+          'transcripts',
+          `${hashSessionId(scopeId)}.jsonl`,
+        );
+        const payload = await readTail(transcriptPath, lines);
         sendJson(200, payload);
         return;
       }
@@ -218,6 +306,38 @@ export function createStatusHandler(context: StatusContext): StatusHandler {
         }
 
         await context.sessionStore.clear(scopeId);
+        sendJson(200, { ok: true, scopeId });
+        return;
+      }
+
+      if (req.method === 'POST' && path.startsWith('/sessions/') && path.endsWith('/purge')) {
+        if (!isLoopbackAddress(req.socket?.remoteAddress)) {
+          sendJson(403, { error: 'forbidden' });
+          return;
+        }
+
+        const rawScopeId = path.slice('/sessions/'.length, -'/purge'.length);
+        if (!rawScopeId) {
+          sendJson(404, { error: 'not_found' });
+          return;
+        }
+
+        let scopeId: string;
+        try {
+          scopeId = decodeURIComponent(rawScopeId);
+        } catch {
+          sendJson(400, { error: 'invalid_scope_id' });
+          return;
+        }
+
+        const url = new URL(req.url ?? '', 'http://localhost');
+        const confirm = url.searchParams.get('confirm');
+        if (confirm !== scopeId) {
+          sendJson(400, { error: 'confirm_required' });
+          return;
+        }
+
+        await context.sessionStore.purge(scopeId);
         sendJson(200, { ok: true, scopeId });
         return;
       }
