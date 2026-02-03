@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "gateway": {
+    "host": "127.0.0.1",
+    "port": 8787
+  },
+  "features": {
+    "compactionEnabled": false,
+    "distillationEnabled": false
+  },
+  "memory": {
+    "distillationEveryNItems": 20,
+    "distillationMaxItems": 200
+  },
+  "family": {
+    "schemaVersion": 1,
+    "familyId": "default",
+    "members": [
+      {
+        "memberId": "wags",
+        "displayName": "Wags",
+        "role": "parent",
+        "telegramUserIds": [889348242]
+      }
+    ],
+    "parentsGroup": {
+      "telegramChatId": null
+    }
+  }
+}
