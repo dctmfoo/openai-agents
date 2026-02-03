@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SessionStore } from './sessionStore.js';
+import { TranscriptStore } from './transcriptStore.js';
 import type { AgentInputItem } from '@openai/agents';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -25,7 +26,11 @@ describe('SessionStore', () => {
   });
 
   it('returns the same session instance for the same scopeId', async () => {
-    const store = new SessionStore({ baseDir: tempDir, compactionEnabled: false });
+    const store = new SessionStore({
+      baseDir: path.join(tempDir, 'sessions'),
+      transcriptsDir: path.join(tempDir, 'transcripts'),
+      compactionEnabled: false,
+    });
 
     const a1 = store.getOrCreate('scope-a');
     const a2 = store.getOrCreate('scope-a');
@@ -34,7 +39,11 @@ describe('SessionStore', () => {
   });
 
   it('isolates history across different scopeIds', async () => {
-    const store = new SessionStore({ baseDir: tempDir, compactionEnabled: false });
+    const store = new SessionStore({
+      baseDir: path.join(tempDir, 'sessions'),
+      transcriptsDir: path.join(tempDir, 'transcripts'),
+      compactionEnabled: false,
+    });
 
     const s1 = store.getOrCreate('scope-1');
     const s2 = store.getOrCreate('scope-2');
@@ -51,7 +60,11 @@ describe('SessionStore', () => {
   });
 
   it('can clear a scope session without affecting others', async () => {
-    const store = new SessionStore({ baseDir: tempDir, compactionEnabled: false });
+    const store = new SessionStore({
+      baseDir: path.join(tempDir, 'sessions'),
+      transcriptsDir: path.join(tempDir, 'transcripts'),
+      compactionEnabled: false,
+    });
 
     const s1 = store.getOrCreate('scope-1');
     const s2 = store.getOrCreate('scope-2');
@@ -70,13 +83,66 @@ describe('SessionStore', () => {
   });
 
   it('reloads history when a new store is created', async () => {
-    const store1 = new SessionStore({ baseDir: tempDir, compactionEnabled: false });
+    const store1 = new SessionStore({
+      baseDir: path.join(tempDir, 'sessions'),
+      transcriptsDir: path.join(tempDir, 'transcripts'),
+      compactionEnabled: false,
+    });
     const session1 = store1.getOrCreate('scope-persist');
     await session1.addItems([userMessage('persist me')]);
 
-    const store2 = new SessionStore({ baseDir: tempDir, compactionEnabled: false });
+    const store2 = new SessionStore({
+      baseDir: path.join(tempDir, 'sessions'),
+      transcriptsDir: path.join(tempDir, 'transcripts'),
+      compactionEnabled: false,
+    });
     const session2 = store2.getOrCreate('scope-persist');
 
     expect(await session2.getItems()).toEqual([userMessage('persist me')]);
+  });
+
+  it('appends to the transcript without overwriting earlier entries', async () => {
+    const transcriptsDir = path.join(tempDir, 'transcripts');
+    const store = new SessionStore({
+      baseDir: path.join(tempDir, 'sessions'),
+      transcriptsDir,
+      compactionEnabled: false,
+    });
+
+    const session = store.getOrCreate('scope-transcript');
+    await session.addItems([userMessage('first')]);
+    await session.addItems([userMessage('second')]);
+
+    const transcript = new TranscriptStore({
+      sessionId: 'scope-transcript',
+      baseDir: transcriptsDir,
+    });
+
+    expect(await transcript.getItems()).toEqual([
+      userMessage('first'),
+      userMessage('second'),
+    ]);
+  });
+
+  it('clears derived state without deleting transcript history', async () => {
+    const transcriptsDir = path.join(tempDir, 'transcripts');
+    const store = new SessionStore({
+      baseDir: path.join(tempDir, 'sessions'),
+      transcriptsDir,
+      compactionEnabled: false,
+    });
+
+    const session = store.getOrCreate('scope-clear-transcript');
+    await session.addItems([userMessage('hello')]);
+    await store.clear('scope-clear-transcript');
+
+    expect(await session.getItems()).toEqual([]);
+
+    const transcript = new TranscriptStore({
+      sessionId: 'scope-clear-transcript',
+      baseDir: transcriptsDir,
+    });
+
+    expect(await transcript.getItems()).toEqual([userMessage('hello')]);
   });
 });

@@ -2,7 +2,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 
 /**
- * Root directory for Halo runtime state (sessions, memory, logs, config).
+ * Root directory for Halo runtime state (transcripts, sessions, memory, logs, config).
  *
  * Mirrors the OpenClaw convention of keeping durable state out of the repo.
  */

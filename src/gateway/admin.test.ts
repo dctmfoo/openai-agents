@@ -33,8 +33,12 @@ const makeMockResponse = (): MockResponse => {
 const makeSessionStore = async () => {
   // SessionStore persists to disk by default. Use an isolated temp directory in tests
   // to avoid cross-test contamination from previous runs.
-  const baseDir = await mkdtemp(path.join(os.tmpdir(), 'halo-sessions-'));
-  return new SessionStore({ baseDir, compactionEnabled: false });
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'halo-sessions-'));
+  return new SessionStore({
+    baseDir: path.join(rootDir, 'sessions'),
+    transcriptsDir: path.join(rootDir, 'transcripts'),
+    compactionEnabled: false,
+  });
 };
 
 describe('gateway status handler', () => {

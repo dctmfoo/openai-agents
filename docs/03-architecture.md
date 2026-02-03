@@ -86,6 +86,8 @@ We will use:
 - `OpenAIResponsesCompactionSession` to keep long-running sessions small
 
 Notes:
+- Raw transcripts are append-only JSONL files under `HALO_HOME/transcripts` (source of truth).
+- Derived session state (summaries/compactions) is stored separately under `HALO_HOME/sessions`.
 - Compaction keeps user messages verbatim and replaces prior assistant/tool items with an encrypted compaction item.
 
 ## 6) Memory distillation (lasting vs temporal)
