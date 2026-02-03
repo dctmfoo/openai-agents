@@ -1,6 +1,6 @@
 import { createTelegramAdapter } from '../interfaces/telegram/bot.js';
 import { resolveVersion, startAdminServer } from './admin.js';
-import { defaultSessionStore } from '../sessions/sessionStore.js';
+import { defaultSessionStore, SessionStore } from '../sessions/sessionStore.js';
 
 export type GatewayOptions = {
   telegram?: {
@@ -15,6 +15,7 @@ export type GatewayOptions = {
     version?: string | null;
     startedAtMs?: number;
   };
+  sessionStore?: SessionStore;
 };
 
 export const DEFAULT_GATEWAY_HOST = '127.0.0.1';
@@ -43,10 +44,22 @@ export async function startGateway(options: GatewayOptions) {
     throw new Error('Missing TELEGRAM_BOT_TOKEN in environment');
   }
 
+  const sessionStore = options.sessionStore ?? defaultSessionStore;
+
   const telegram = createTelegramAdapter({
     token: telegramConfig.token,
     logDir: telegramConfig.logDir,
     rootDir: telegramConfig.rootDir,
+    deps: {
+      runPrime: (input, opts) => {
+        return import('../prime/prime.js').then(({ runPrime }) =>
+          runPrime(input, {
+            ...opts,
+            sessionStore,
+          }),
+        );
+      },
+    },
   });
 
   const { host: adminHost, port: adminPort } = resolveAdminBinding(options.admin);
@@ -59,7 +72,7 @@ export async function startGateway(options: GatewayOptions) {
     port: adminPort,
     haloHome,
     version,
-    sessionStore: defaultSessionStore,
+    sessionStore,
     startedAtMs: options.admin?.startedAtMs,
   });
 
