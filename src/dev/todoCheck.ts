@@ -22,6 +22,7 @@ const ignoredDirs = new Set([
   ".git",
   ".pnpm-store",
   ".turbo",
+  ".ralph-worktrees",
   "archive",
   "coverage",
   "dist",
@@ -78,6 +79,11 @@ const scanFile = (
   const text = buffer.toString("utf8");
   const lines = text.split(/\r?\n/);
   const relativePath = relative(rootDir, filePath) || filePath;
+
+  // Avoid flagging the checker implementation itself.
+  if (relativePath.replace(/\\/g, '/') === 'src/dev/todoCheck.ts') {
+    return;
+  }
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? "";

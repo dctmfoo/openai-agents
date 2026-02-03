@@ -33,7 +33,7 @@ const rememberDaily = tool({
   },
 });
 
-export async function makePrimeAgent() {
+async function makePrimeAgent() {
   const rootDir = process.cwd();
   const ctx = await loadMarkdownContextFiles({ rootDir });
 

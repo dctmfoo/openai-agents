@@ -3,7 +3,8 @@
   "entry": [
     "src/interfaces/telegram/start.ts",
     "src/interfaces/cli/run.ts",
-    "src/gateway/start.ts"
+    "src/gateway/start.ts",
+    "src/dev/todoCheck.ts"
   ],
   "project": [
     "src/**/*.ts",
