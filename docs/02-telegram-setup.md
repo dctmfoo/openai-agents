@@ -38,3 +38,4 @@ pnpm start:gateway
 - Logs are written to `logs/events.jsonl` (gitignored).
 - Group chats are ignored.
 - `OPENAI_API_KEY` is optional if you authenticate via Codex device OAuth.
+- Gateway admin exposes `GET /events/tail?lines=N` on the local-only host to inspect the last N log entries.

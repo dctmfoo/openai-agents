@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { buildHaloHomePaths, createStatusHandler } from './admin.js';
 import { SessionStore } from '../sessions/sessionStore.js';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -117,6 +117,53 @@ describe('gateway status handler', () => {
     expect(payload).toEqual(['scope-1', 'scope-2']);
   });
 
+  it('returns scope ids with item counts for /sessions-with-counts', async () => {
+    const store = await makeSessionStore();
+    const s1 = store.getOrCreate('scope-2');
+    const s2 = store.getOrCreate('scope-1');
+
+    await s1.addItems([
+      {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: 'one' }],
+      },
+      {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: 'two' }],
+      },
+    ]);
+    await s2.addItems([
+      {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: 'solo' }],
+      },
+    ]);
+
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths('/halo'),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler({ method: 'GET', url: '/sessions-with-counts' }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain('application/json');
+
+    const payload = JSON.parse(res.body) as Array<{ scopeId: string; itemCount: number }>;
+    expect(payload).toEqual([
+      { scopeId: 'scope-1', itemCount: 1 },
+      { scopeId: 'scope-2', itemCount: 2 },
+    ]);
+  });
+
   it('clears a session for /sessions/:scopeId/clear', async () => {
     const store = await makeSessionStore();
     const s1 = store.getOrCreate('scope-1');
@@ -157,5 +204,90 @@ describe('gateway status handler', () => {
     expect(payload.scopeId).toBe('scope-1');
     expect((await s1.getItems()).length).toBe(0);
     expect((await s2.getItems()).length).toBe(1);
+  });
+
+  it('returns last N event lines for /events/tail', async () => {
+    const store = await makeSessionStore();
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    const logsDir = path.join(haloHome, 'logs');
+    const logPath = path.join(logsDir, 'events.jsonl');
+    const entries = [
+      { ts: '1', type: 'one', data: {} },
+      { ts: '2', type: 'two', data: {} },
+      { ts: '3', type: 'three', data: {} },
+    ];
+
+    await mkdir(logsDir, { recursive: true });
+    await writeFile(
+      logPath,
+      entries.map((entry) => JSON.stringify(entry)).join('\n') + '\n',
+      'utf8',
+    );
+
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      { method: 'GET', url: '/events/tail?lines=2', socket: { remoteAddress: '127.0.0.1' } },
+      res,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain('application/json');
+
+    const payload = JSON.parse(res.body) as Array<{ ts: string }>;
+    expect(payload).toEqual(entries.slice(-2));
+  });
+
+  it('returns an empty array when the events log is missing', async () => {
+    const store = await makeSessionStore();
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      { method: 'GET', url: '/events/tail?lines=5', socket: { remoteAddress: '127.0.0.1' } },
+      res,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain('application/json');
+    expect(JSON.parse(res.body)).toEqual([]);
+  });
+
+  it('rejects non-local requests for /events/tail', async () => {
+    const store = await makeSessionStore();
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths('/halo'),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      { method: 'GET', url: '/events/tail?lines=1', socket: { remoteAddress: '10.0.0.1' } },
+      res,
+    );
+
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body)).toEqual({ error: 'forbidden' });
   });
 });

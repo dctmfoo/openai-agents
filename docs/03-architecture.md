@@ -111,6 +111,9 @@ Distillation triggers (planned):
 
 - The desktop admin app reads gateway status via `GET /status`.
 - Default gateway base is `http://127.0.0.1:8787` (override with `?gateway=` in the admin URL).
+- Session inventory:
+`GET /sessions` returns scope id strings (legacy shape).
+`GET /sessions-with-counts` returns `{ scopeId, itemCount }` objects.
 
 ## 7) Security boundaries (summary)
 
