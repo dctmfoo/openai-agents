@@ -121,6 +121,7 @@ Quality bar:
 
 ## Docs MCP
 
-When working on OpenAI API / Agents SDK / Codex details, consult the OpenAI Developer Docs MCP server via Codex:
+Always use the OpenAI developer documentation MCP server if you need to work with the OpenAI API, Agents SDK, Codex, etc., without me having to explicitly ask.
+
 - MCP name: `openaiDeveloperDocs`
 - URL: https://developers.openai.com/mcp
