@@ -5,7 +5,12 @@ const complexityThreshold = 15;
 
 export default [
   {
-    ignores: ["dist/**", "node_modules/**"],
+    ignores: [
+      "dist/**",
+      "node_modules/**",
+      ".ralph-worktrees/**",
+      "apps/admin/src-tauri/target/**",
+    ],
   },
   {
     files: ["**/*.{js,cjs,mjs,ts,tsx}"],

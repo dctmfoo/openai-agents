@@ -11,7 +11,7 @@ export type HaloHomePaths = {
   memory: string;
 };
 
-export type GatewayStatus = {
+type GatewayStatus = {
   uptime: number;
   version: string | null;
   haloHome: HaloHomePaths;
@@ -130,7 +130,7 @@ export async function resolveVersion(root: string): Promise<string | null> {
   }
 }
 
-export function createStatusPayload(context: StatusContext): GatewayStatus {
+function createStatusPayload(context: StatusContext): GatewayStatus {
   const now = context.now ? context.now() : Date.now();
   const uptime = Math.max(0, (now - context.startedAtMs) / 1000);
 

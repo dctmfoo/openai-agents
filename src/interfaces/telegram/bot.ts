@@ -17,7 +17,7 @@ export type TelegramBotLike = {
   start: () => Promise<void>;
 };
 
-export type TelegramAdapterDeps = {
+type TelegramAdapterDeps = {
   runPrime: typeof runPrime;
   appendDailyNote: typeof appendDailyNote;
   appendJsonl: typeof appendJsonl;
