@@ -125,6 +125,19 @@ export function createStatusHandler(context: StatusContext): StatusHandler {
         return;
       }
 
+      if (req.method === 'GET' && path === '/sessions-with-counts') {
+        const scopeIds = context.sessionStore.listScopeIds().sort();
+        const summaries = await Promise.all(
+          scopeIds.map(async (scopeId) => {
+            const session = context.sessionStore.getOrCreate(scopeId);
+            const items = await session.getItems();
+            return { scopeId, itemCount: items.length };
+          }),
+        );
+        sendJson(200, summaries);
+        return;
+      }
+
       if (req.method === 'POST' && path.startsWith('/sessions/') && path.endsWith('/clear')) {
         const rawScopeId = path.slice('/sessions/'.length, -'/clear'.length);
         if (!rawScopeId) {

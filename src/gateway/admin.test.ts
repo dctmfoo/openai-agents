@@ -117,6 +117,53 @@ describe('gateway status handler', () => {
     expect(payload).toEqual(['scope-1', 'scope-2']);
   });
 
+  it('returns scope ids with item counts for /sessions-with-counts', async () => {
+    const store = await makeSessionStore();
+    const s1 = store.getOrCreate('scope-2');
+    const s2 = store.getOrCreate('scope-1');
+
+    await s1.addItems([
+      {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: 'one' }],
+      },
+      {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: 'two' }],
+      },
+    ]);
+    await s2.addItems([
+      {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: 'solo' }],
+      },
+    ]);
+
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths('/halo'),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler({ method: 'GET', url: '/sessions-with-counts' }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain('application/json');
+
+    const payload = JSON.parse(res.body) as Array<{ scopeId: string; itemCount: number }>;
+    expect(payload).toEqual([
+      { scopeId: 'scope-1', itemCount: 1 },
+      { scopeId: 'scope-2', itemCount: 2 },
+    ]);
+  });
+
   it('clears a session for /sessions/:scopeId/clear', async () => {
     const store = await makeSessionStore();
     const s1 = store.getOrCreate('scope-1');
