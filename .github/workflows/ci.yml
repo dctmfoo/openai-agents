@@ -14,6 +14,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    env:
+      # Unit tests should not require real credentials; a placeholder avoids
+      # OpenAI client construction failures inside compaction session wrappers.
+      OPENAI_API_KEY: test
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
