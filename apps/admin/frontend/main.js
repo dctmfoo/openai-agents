@@ -21,6 +21,7 @@ const statusRetry = document.querySelector('[data-status-retry]');
 const sessionsCard = document.querySelector('[data-sessions-card]');
 const sessionsTitle = document.querySelector('[data-sessions-title]');
 const sessionsMeta = document.querySelector('[data-sessions-meta]');
+const sessionsList = document.querySelector('[data-sessions-list]');
 const sessionsPayload = document.querySelector('[data-sessions-payload]');
 const sessionsGateway = document.querySelector('[data-sessions-gateway]');
 const sessionsRetry = document.querySelector('[data-sessions-retry]');
@@ -110,14 +111,22 @@ const setSessionsLoading = () => {
   sessionsCard?.classList.remove('status--error');
   if (sessionsTitle) sessionsTitle.textContent = 'Sessions';
   if (sessionsMeta) sessionsMeta.textContent = 'Checking...';
-  if (sessionsPayload) sessionsPayload.textContent = 'Loading sessions...';
+  if (sessionsList) sessionsList.textContent = 'Loading sessions...';
+  if (sessionsPayload) {
+    sessionsPayload.hidden = true;
+    sessionsPayload.textContent = '';
+  }
 };
 
 const setSessionsError = (error) => {
   sessionsCard?.classList.add('status--error');
   if (sessionsTitle) sessionsTitle.textContent = 'Sessions unavailable';
   if (sessionsMeta) sessionsMeta.textContent = 'Unavailable';
-  if (sessionsPayload) sessionsPayload.textContent = formatSessionsError(error, gatewayBase);
+  if (sessionsList) sessionsList.textContent = formatSessionsError(error, gatewayBase);
+  if (sessionsPayload) {
+    sessionsPayload.hidden = true;
+    sessionsPayload.textContent = '';
+  }
 };
 
 const setSessionsSuccess = (payload) => {
@@ -125,10 +134,9 @@ const setSessionsSuccess = (payload) => {
   if (sessionsTitle) sessionsTitle.textContent = 'Sessions';
   if (sessionsMeta) sessionsMeta.textContent = `Updated ${new Date().toLocaleTimeString()}`;
 
-  if (sessionsPayload) {
-    // Render a clickable list (clear buttons) when the payload matches expected shape.
+  if (sessionsList) {
     if (Array.isArray(payload)) {
-      sessionsPayload.textContent = '';
+      sessionsList.textContent = '';
       const list = document.createElement('div');
       list.className = 'sessions';
 
@@ -155,10 +163,15 @@ const setSessionsSuccess = (payload) => {
         }
       }
 
-      sessionsPayload.appendChild(list);
+      sessionsList.appendChild(list);
     } else {
-      sessionsPayload.textContent = formatSessionsPayload(payload);
+      sessionsList.textContent = formatSessionsPayload(payload);
     }
+  }
+
+  if (sessionsPayload) {
+    sessionsPayload.hidden = true;
+    sessionsPayload.textContent = formatSessionsPayload(payload);
   }
 };
 
@@ -207,7 +220,7 @@ sessionsRetry?.addEventListener('click', () => {
   void refreshSessions();
 });
 
-sessionsPayload?.addEventListener('click', async (event) => {
+sessionsList?.addEventListener('click', async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
   const button = target.closest('[data-clear-scope-id]');

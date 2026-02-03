@@ -34,3 +34,4 @@ dist
 
 # apps/admin: per-app lockfile (keep root lockfile as source of truth)
 /apps/admin/pnpm-lock.yaml
+/apps/admin/src-tauri/gen/
