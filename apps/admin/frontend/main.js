@@ -4,6 +4,12 @@ import {
   formatStatusPayload,
   resolveGatewayBase,
 } from './status.js';
+import {
+  buildClearSessionUrl,
+  buildSessionsUrl,
+  formatSessionsError,
+  formatSessionsPayload,
+} from './sessions.js';
 
 const statusCard = document.querySelector('[data-status-card]');
 const statusTitle = document.querySelector('[data-status-title]');
@@ -12,11 +18,22 @@ const statusPayload = document.querySelector('[data-status-payload]');
 const statusGateway = document.querySelector('[data-status-gateway]');
 const statusRetry = document.querySelector('[data-status-retry]');
 
+const sessionsCard = document.querySelector('[data-sessions-card]');
+const sessionsTitle = document.querySelector('[data-sessions-title]');
+const sessionsMeta = document.querySelector('[data-sessions-meta]');
+const sessionsPayload = document.querySelector('[data-sessions-payload]');
+const sessionsGateway = document.querySelector('[data-sessions-gateway]');
+const sessionsRetry = document.querySelector('[data-sessions-retry]');
+
 const gatewayBase = resolveGatewayBase(window.location.search);
 const statusUrl = buildStatusUrl(gatewayBase);
+const sessionsUrl = buildSessionsUrl(gatewayBase);
 
 if (statusGateway) {
   statusGateway.textContent = gatewayBase;
+}
+if (sessionsGateway) {
+  sessionsGateway.textContent = gatewayBase;
 }
 
 const setLoading = () => {
@@ -89,8 +106,129 @@ const refreshStatus = async () => {
   }
 };
 
+const setSessionsLoading = () => {
+  sessionsCard?.classList.remove('status--error');
+  if (sessionsTitle) sessionsTitle.textContent = 'Sessions';
+  if (sessionsMeta) sessionsMeta.textContent = 'Checking...';
+  if (sessionsPayload) sessionsPayload.textContent = 'Loading sessions...';
+};
+
+const setSessionsError = (error) => {
+  sessionsCard?.classList.add('status--error');
+  if (sessionsTitle) sessionsTitle.textContent = 'Sessions unavailable';
+  if (sessionsMeta) sessionsMeta.textContent = 'Unavailable';
+  if (sessionsPayload) sessionsPayload.textContent = formatSessionsError(error, gatewayBase);
+};
+
+const setSessionsSuccess = (payload) => {
+  sessionsCard?.classList.remove('status--error');
+  if (sessionsTitle) sessionsTitle.textContent = 'Sessions';
+  if (sessionsMeta) sessionsMeta.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+
+  if (sessionsPayload) {
+    // Render a clickable list (clear buttons) when the payload matches expected shape.
+    if (Array.isArray(payload)) {
+      sessionsPayload.textContent = '';
+      const list = document.createElement('div');
+      list.className = 'sessions';
+
+      if (payload.length === 0) {
+        list.textContent = '(no sessions yet)';
+      } else {
+        for (const entry of payload) {
+          const row = document.createElement('div');
+          row.className = 'sessions__row';
+
+          const label = document.createElement('div');
+          label.className = 'sessions__label';
+          label.textContent = `${entry.scopeId} (${entry.itemCount})`;
+
+          const btn = document.createElement('button');
+          btn.className = 'status__button';
+          btn.type = 'button';
+          btn.textContent = 'Clear';
+          btn.setAttribute('data-clear-scope-id', entry.scopeId);
+
+          row.appendChild(label);
+          row.appendChild(btn);
+          list.appendChild(row);
+        }
+      }
+
+      sessionsPayload.appendChild(list);
+    } else {
+      sessionsPayload.textContent = formatSessionsPayload(payload);
+    }
+  }
+};
+
+const fetchSessions = async () => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4000);
+
+  try {
+    const response = await fetch(sessionsUrl, {
+      headers: { accept: 'application/json' },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gateway responded with ${response.status}.`);
+    }
+
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
+const clearSession = async (scopeId) => {
+  const url = buildClearSessionUrl(gatewayBase, scopeId);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { accept: 'application/json' },
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to clear session ${scopeId} (${response.status}).`);
+  }
+};
+
+const refreshSessions = async () => {
+  setSessionsLoading();
+  try {
+    const payload = await fetchSessions();
+    setSessionsSuccess(payload);
+  } catch (error) {
+    setSessionsError(error);
+  }
+};
+
+sessionsRetry?.addEventListener('click', () => {
+  void refreshSessions();
+});
+
+sessionsPayload?.addEventListener('click', async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const button = target.closest('[data-clear-scope-id]');
+  if (!(button instanceof HTMLElement)) return;
+  const scopeId = button.getAttribute('data-clear-scope-id');
+  if (!scopeId) return;
+
+  try {
+    button.setAttribute('disabled', 'disabled');
+    await clearSession(scopeId);
+    await refreshSessions();
+  } catch (error) {
+    setSessionsError(error);
+  } finally {
+    button.removeAttribute('disabled');
+  }
+});
+
 statusRetry?.addEventListener('click', () => {
   void refreshStatus();
 });
 
 void refreshStatus();
+void refreshSessions();
