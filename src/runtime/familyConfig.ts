@@ -22,7 +22,7 @@ const ParentsGroupSchema = z
   })
   .strict();
 
-export const FamilyConfigSchema = z
+export const FAMILY_CONFIG_SCHEMA = z
   .object({
     schemaVersion: z.literal(FAMILY_SCHEMA_VERSION),
     familyId: z.string().min(1),
@@ -31,7 +31,7 @@ export const FamilyConfigSchema = z
   })
   .strict();
 
-export type FamilyConfig = z.infer<typeof FamilyConfigSchema>;
+export type FamilyConfig = z.infer<typeof FAMILY_CONFIG_SCHEMA>;
 
 export type FamilyConfigLoadOptions = {
   env?: NodeJS.ProcessEnv;
@@ -59,7 +59,7 @@ function parseFamilyConfig(
   data: unknown,
   sourcePath = 'family config',
 ): FamilyConfig {
-  const parsed = FamilyConfigSchema.safeParse(data);
+  const parsed = FAMILY_CONFIG_SCHEMA.safeParse(data);
   if (parsed.success) return parsed.data;
 
   const details = formatZodIssues(parsed.error);

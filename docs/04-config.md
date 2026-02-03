@@ -1,14 +1,16 @@
 # Configuration
 
-This project is configured via local JSON files.
+This project is configured via a single JSON file.
 
-- Example configs are committed under `config/*.example.json`.
-- Real configs live under `HALO_HOME/config/*.json` and are **gitignored** (defaults to `~/.halo`).
+- Example config is committed under `config/halo.example.json`.
+- Real config lives at: `HALO_HOME/config.json` (defaults to `~/.halo/config.json`).
 
 ## Files
 
-- `config/family.example.json` → `HALO_HOME/config/family.json`
-- `config/nodes.example.json` → `HALO_HOME/config/nodes.json`
+- `config/halo.example.json` → `HALO_HOME/config.json`
+
+Notes:
+- `TELEGRAM_BOT_TOKEN` stays in the environment (don’t put secrets in config.json).
 
 ## Principles
 
