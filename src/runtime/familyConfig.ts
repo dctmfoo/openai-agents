@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { z, type ZodError } from 'zod';
 import { getHaloHome } from './haloHome.js';
 
-export const FAMILY_SCHEMA_VERSION = 1;
+const FAMILY_SCHEMA_VERSION = 1;
 
 const MemberRoleSchema = z.enum(['parent', 'child']);
 
@@ -38,9 +38,9 @@ export type FamilyConfigLoadOptions = {
   haloHome?: string;
 };
 
-export function resolveFamilyConfigPath(haloHome: string): string {
+const resolveFamilyConfigPath = (haloHome: string): string => {
   return join(haloHome, 'config', 'family.json');
-}
+};
 
 export function getFamilyConfigPath(env: NodeJS.ProcessEnv = process.env): string {
   return resolveFamilyConfigPath(getHaloHome(env));
@@ -55,7 +55,7 @@ const formatZodIssues = (error: ZodError): string => {
     .join('; ');
 };
 
-export function parseFamilyConfig(
+function parseFamilyConfig(
   data: unknown,
   sourcePath = 'family config',
 ): FamilyConfig {
