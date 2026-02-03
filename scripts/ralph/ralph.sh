@@ -43,7 +43,12 @@ ALLOW_MAIN="${RALPH_ALLOW_MAIN:-0}"
 WORKTREES_DIR="${RALPH_WORKTREES_DIR:-$ROOT_DIR/.ralph-worktrees}"
 
 MODEL="${CODEX_MODEL:-gpt-5.2-codex}"
-REASONING_EFFORT="${CODEX_REASONING_EFFORT:-high}"
+
+# Codex CLI execution defaults (override via env when needed)
+# NOTE: Our convention is to pass approvals/sandbox/model/config at the top-level `codex` command.
+ASK_FOR_APPROVAL="${CODEX_ASK_FOR_APPROVAL:-on-request}"
+SANDBOX_MODE="${CODEX_SANDBOX:-workspace-write}"
+REASONING_EFFORT="${CODEX_REASONING_EFFORT:-xhigh}"
 
 PROMPT_TEMPLATE="${PROMPT_TEMPLATE:-$ROOT_DIR/scripts/ralph/prompt.codex.md}"
 
@@ -202,7 +207,12 @@ while [[ "$ITER" -le "$MAX_ITERATIONS" ]]; do
   echo "Iteration $ITER/$MAX_ITERATIONS: story $STORY_ID"
 
   # fresh codex run for this story
-  render_prompt "$STORY_ID" | codex exec --full-auto -m "$MODEL" -c "reasoning.effort=\"$REASONING_EFFORT\"" -
+  render_prompt "$STORY_ID" | codex \
+    --ask-for-approval "$ASK_FOR_APPROVAL" \
+    --sandbox "$SANDBOX_MODE" \
+    -m "$MODEL" \
+    -c "model_reasoning_effort=\"$REASONING_EFFORT\"" \
+    exec --full-auto -
 
   # runner owns checks + commit
   run_checks
