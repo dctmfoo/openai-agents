@@ -1,7 +1,7 @@
 import process from 'node:process';
 import { Bot } from 'grammy';
 import { runPrime } from '../../prime/prime.js';
-import { appendDailyNote } from '../../memory/memoryFiles.js';
+import { appendScopedDailyNote } from '../../memory/scopedMemory.js';
 import { loadFamilyConfig, type FamilyConfig } from '../../runtime/familyConfig.js';
 import { getHaloHome } from '../../runtime/haloHome.js';
 import { appendJsonl, type EventLogRecord } from '../../utils/logging.js';
@@ -22,7 +22,7 @@ export type TelegramBotLike = {
 
 type TelegramAdapterDeps = {
   runPrime: typeof runPrime;
-  appendDailyNote: typeof appendDailyNote;
+  appendScopedDailyNote: typeof appendScopedDailyNote;
   appendJsonl: typeof appendJsonl;
   loadFamilyConfig: typeof loadFamilyConfig;
 };
@@ -62,12 +62,12 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
 
   const {
     runPrime: runPrimeImpl,
-    appendDailyNote: appendDailyNoteImpl,
+    appendScopedDailyNote: appendScopedDailyNoteImpl,
     appendJsonl: appendJsonlImpl,
     loadFamilyConfig: loadFamilyConfigImpl,
   } = {
     runPrime,
-    appendDailyNote,
+    appendScopedDailyNote,
     appendJsonl,
     loadFamilyConfig,
     ...deps,
@@ -134,6 +134,19 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
     }
 
     const scopeId = policy.scopeId;
+    if (!scopeId) {
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'prime.run.error',
+        data: {
+          channel: 'telegram',
+          userId,
+          error: { name: 'PolicyError', message: 'Allowed policy decision missing scopeId' },
+        },
+      });
+      await ctx.reply('Something went wrong while computing policy scope. Check logs.');
+      return;
+    }
 
     await writeLog({
       ts: now().toISOString(),
@@ -142,12 +155,12 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
     });
 
     try {
-      const result = await runPrimeImpl(text, { channel: 'telegram', userId, scopeId });
+      const result = await runPrimeImpl(text, { channel: 'telegram', userId, scopeId, rootDir });
       const finalOutput = String(result.finalOutput ?? '').trim() || '(no output)';
 
-      // Persist a lightweight transcript to the daily memory file.
-      await appendDailyNoteImpl({ rootDir }, `[user] ${text}`);
-      await appendDailyNoteImpl({ rootDir }, `[prime] ${finalOutput}`);
+      // Persist a lightweight transcript to the scoped daily memory file.
+      await appendScopedDailyNoteImpl({ rootDir, scopeId }, `[user] ${text}`);
+      await appendScopedDailyNoteImpl({ rootDir, scopeId }, `[prime] ${finalOutput}`);
 
       await writeLog({
         ts: now().toISOString(),

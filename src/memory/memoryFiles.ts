@@ -19,7 +19,7 @@ async function safeRead(path: string): Promise<string> {
   return await readFile(path, 'utf8');
 }
 
-export async function loadMarkdownContextFiles(paths: MemoryPaths) {
+async function loadMarkdownContextFiles(paths: MemoryPaths) {
   const soul = await safeRead(join(paths.rootDir, 'SOUL.md'));
   const user = await safeRead(join(paths.rootDir, 'USER.md'));
   const longTerm = await safeRead(join(paths.rootDir, 'MEMORY.md'));

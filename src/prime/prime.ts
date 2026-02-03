@@ -1,7 +1,7 @@
 import { Agent, run, tool } from '@openai/agents';
 import { z } from 'zod';
 import process from 'node:process';
-import { appendDailyNote, loadMarkdownContextFiles } from '../memory/memoryFiles.js';
+import { appendScopedDailyNote, loadScopedContextFiles } from '../memory/scopedMemory.js';
 import { defaultSessionStore } from '../sessions/sessionStore.js';
 
 export type PrimeRunOptions = {
@@ -9,6 +9,8 @@ export type PrimeRunOptions = {
   userId?: string;
   /** Stable identifier for the conversation scope (e.g. Telegram chat id). */
   scopeId?: string;
+  /** Root directory for durable runtime state (HALO_HOME). Defaults to process.cwd() for CLI/dev. */
+  rootDir?: string;
   channel?: 'telegram' | 'cli';
 };
 
@@ -21,21 +23,24 @@ const getTime = tool({
   },
 });
 
-const rememberDaily = tool({
-  name: 'remember_daily',
-  description:
-    "Append a short bullet to today's daily memory file (memory/YYYY-MM-DD.md). Use when the user wants something recorded.",
-  parameters: z.object({ note: z.string().min(1) }),
-  execute: async ({ note }) => {
-    const rootDir = process.cwd();
-    const path = await appendDailyNote({ rootDir }, note);
-    return `Saved to ${path}`;
-  },
-});
+function makeRememberDailyTool(options: { rootDir: string; scopeId: string }) {
+  return tool({
+    name: 'remember_daily',
+    description:
+      "Append a short bullet to today's daily memory file (scoped). Use when the user wants something recorded.",
+    parameters: z.object({ note: z.string().min(1) }),
+    execute: async ({ note }) => {
+      const path = await appendScopedDailyNote(
+        { rootDir: options.rootDir, scopeId: options.scopeId },
+        note,
+      );
+      return `Saved to ${path}`;
+    },
+  });
+}
 
-async function makePrimeAgent() {
-  const rootDir = process.cwd();
-  const ctx = await loadMarkdownContextFiles({ rootDir });
+async function makePrimeAgent(options: { rootDir: string; scopeId: string }) {
+  const ctx = await loadScopedContextFiles({ rootDir: options.rootDir, scopeId: options.scopeId });
 
   const contextBlock = [
     '---',
@@ -49,6 +54,8 @@ async function makePrimeAgent() {
   ]
     .filter(Boolean)
     .join('\n');
+
+  const rememberDaily = makeRememberDailyTool(options);
 
   return new Agent({
     name: 'Prime',
@@ -66,9 +73,11 @@ async function makePrimeAgent() {
 }
 
 export async function runPrime(input: string, opts: PrimeRunOptions = {}) {
-  const agent = await makePrimeAgent();
-
   const scopeId = opts.scopeId ?? `default:${opts.channel ?? 'unknown'}:${opts.userId ?? 'unknown'}`;
+  const rootDir = opts.rootDir ?? process.cwd();
+
+  const agent = await makePrimeAgent({ rootDir, scopeId });
+
   const session = defaultSessionStore.getOrCreate(scopeId);
 
   const result = await run(agent, input, {
