@@ -38,3 +38,41 @@ We use multiple “roles” (can be humans or different models), but outputs mus
 Default: red → green → refactor.
 
 If something is hard to test end-to-end (Telegram), isolate pure logic and test that.
+
+## Dead code checks (Knip)
+
+We track unused exports/files/deps with Knip.
+
+- Run `pnpm check:deadcode` to get a report.
+- Config lives in `knip.json` (entry points + project globs).
+- Suppressions:
+  - Use JSDoc `@public` for exports that are intentionally public.
+- Use JSDoc `@lintignore` (no hyphen) for one-off false positives. The config excludes this tag.
+
+## Duplicate code checks (jscpd)
+
+We track copy/paste duplication with jscpd.
+
+- Run `pnpm check:dup` to scan for duplicates.
+- Config lives in `jscpd.json` (thresholds + exclusions).
+
+## Complexity checks (ESLint + SonarJS)
+
+We track cyclomatic complexity (plus a cognitive-complexity sanity check) with ESLint.
+
+- Run `pnpm check:complexity` to see warnings.
+- Thresholds are warnings (no hard failures) so you can address incrementally.
+- Current thresholds are 15 for both cyclomatic and cognitive complexity.
+- If a warning fires, reduce complexity by extracting helpers, splitting long functions, or simplifying nested conditionals.
+
+## Pre-commit hooks
+
+Enable fast checks locally:
+
+- Run `scripts/dev/install-hooks.sh` from the repo root.
+
+The hook runs `pnpm test` and `pnpm build` before each commit.
+
+Opt-out for a single commit:
+
+- `SKIP_PRECOMMIT=1 git commit -m "message"`
