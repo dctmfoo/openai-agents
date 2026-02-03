@@ -16,6 +16,12 @@ export type GatewayOptions = {
     startedAtMs?: number;
   };
   sessionStore?: SessionStore;
+  config?: {
+    schemaVersion?: number;
+    gateway?: { host?: string; port?: number };
+    features?: { compactionEnabled?: boolean; distillationEnabled?: boolean };
+    memory?: { distillationEveryNItems?: number; distillationMaxItems?: number };
+  };
 };
 
 export const DEFAULT_GATEWAY_HOST = '127.0.0.1';
@@ -73,6 +79,7 @@ export async function startGateway(options: GatewayOptions) {
     haloHome,
     version,
     sessionStore,
+    config: options.config,
     startedAtMs: options.admin?.startedAtMs,
   });
 

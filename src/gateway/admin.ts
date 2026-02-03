@@ -21,6 +21,21 @@ type GatewayStatus = {
     host: string;
     port: number;
   };
+  config?: {
+    schemaVersion?: number;
+    gateway?: {
+      host?: string;
+      port?: number;
+    };
+    features?: {
+      compactionEnabled?: boolean;
+      distillationEnabled?: boolean;
+    };
+    memory?: {
+      distillationEveryNItems?: number;
+      distillationMaxItems?: number;
+    };
+  };
 };
 
 type PolicyScopeStatus = {
@@ -44,6 +59,7 @@ export type StatusContext = {
   version: string | null;
   haloHome: HaloHomePaths;
   sessionStore: SessionStore;
+  config?: GatewayStatus['config'];
   now?: () => number;
 };
 
@@ -154,6 +170,7 @@ export type AdminServerOptions = {
   haloHome: string;
   version: string | null;
   sessionStore: SessionStore;
+  config?: GatewayStatus['config'];
   startedAtMs?: number;
   now?: () => number;
 };
@@ -200,6 +217,7 @@ function createStatusPayload(context: StatusContext): GatewayStatus {
       host: context.host,
       port: context.port,
     },
+    config: context.config,
   };
 }
 
@@ -357,6 +375,7 @@ export async function startAdminServer(options: AdminServerOptions): Promise<Adm
     version: options.version,
     haloHome: buildHaloHomePaths(options.haloHome),
     sessionStore: options.sessionStore,
+    config: options.config,
     now: options.now,
   };
 
