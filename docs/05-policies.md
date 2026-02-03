@@ -48,3 +48,7 @@ Default stance: deny-by-default; allow only explicitly.
 
 - child tools: deny unless specifically safe/read-only
 - parent tools: allowed only via node boundary + explicit allowlist
+
+## Adapter enforcement
+
+The Telegram adapter checks `family.json` on each message. Unknown DMs receive a short refusal message and do not create a session. Group messages are accepted only when `parentsGroup.telegramChatId` matches the chat id.

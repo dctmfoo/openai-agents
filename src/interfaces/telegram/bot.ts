@@ -2,7 +2,10 @@ import process from 'node:process';
 import { Bot } from 'grammy';
 import { runPrime } from '../../prime/prime.js';
 import { appendDailyNote } from '../../memory/memoryFiles.js';
+import { loadFamilyConfig, type FamilyConfig } from '../../runtime/familyConfig.js';
+import { getHaloHome } from '../../runtime/haloHome.js';
 import { appendJsonl, type EventLogRecord } from '../../utils/logging.js';
+import { resolveTelegramPolicy, type TelegramPolicyDecision } from './policy.js';
 
 export type TelegramContext = {
   chat: { id: number; type: string };
@@ -21,12 +24,14 @@ type TelegramAdapterDeps = {
   runPrime: typeof runPrime;
   appendDailyNote: typeof appendDailyNote;
   appendJsonl: typeof appendJsonl;
+  loadFamilyConfig: typeof loadFamilyConfig;
 };
 
 export type TelegramAdapterOptions = {
   token: string;
   logDir?: string;
   rootDir?: string;
+  haloHome?: string;
   bot?: TelegramBotLike;
   now?: () => Date;
   deps?: Partial<TelegramAdapterDeps>;
@@ -37,11 +42,15 @@ export type TelegramAdapter = {
   start: () => Promise<void>;
 };
 
+export const UNKNOWN_DM_REPLY =
+  'Hi! This bot is private to our family. Please ask a parent to invite you.';
+
 export function createTelegramAdapter(options: TelegramAdapterOptions): TelegramAdapter {
   const {
     token,
     logDir = 'logs',
     rootDir = process.cwd(),
+    haloHome = getHaloHome(process.env),
     bot: providedBot,
     now = () => new Date(),
     deps = {},
@@ -51,32 +60,39 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
     throw new Error('Missing TELEGRAM_BOT_TOKEN in environment');
   }
 
-  const { runPrime: runPrimeImpl, appendDailyNote: appendDailyNoteImpl, appendJsonl: appendJsonlImpl } = {
+  const {
+    runPrime: runPrimeImpl,
+    appendDailyNote: appendDailyNoteImpl,
+    appendJsonl: appendJsonlImpl,
+    loadFamilyConfig: loadFamilyConfigImpl,
+  } = {
     runPrime,
     appendDailyNote,
     appendJsonl,
+    loadFamilyConfig,
     ...deps,
   };
 
   const logPath = `${logDir}/events.jsonl`;
   const bot = providedBot ?? (new Bot(token) as unknown as TelegramBotLike);
 
+  let familyConfigPromise: Promise<FamilyConfig> | null = null;
+  const getFamilyConfig = async () => {
+    if (!familyConfigPromise) {
+      familyConfigPromise = loadFamilyConfigImpl({ haloHome });
+    }
+    return familyConfigPromise;
+  };
+
   const writeLog = async (record: EventLogRecord) => {
     await appendJsonlImpl(logPath, record);
   };
 
   bot.on('message:text', async (ctx) => {
-    const chatType = ctx.chat.type;
-
-    // Private only (as per Wags requirement).
-    if (chatType !== 'private') return;
-
     const text = ctx.message.text?.trim();
     if (!text) return;
 
     const userId = String(ctx.from?.id ?? 'unknown');
-    const scopeId = `telegram:${ctx.chat.id}`;
-
     await writeLog({
       ts: now().toISOString(),
       type: 'telegram.update',
@@ -87,6 +103,37 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
         text,
       },
     });
+
+    let policy: TelegramPolicyDecision;
+    try {
+      const familyConfig = await getFamilyConfig();
+      policy = resolveTelegramPolicy({
+        chat: ctx.chat,
+        fromId: ctx.from?.id,
+        family: familyConfig,
+      });
+    } catch (err) {
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'prime.run.error',
+        data: {
+          channel: 'telegram',
+          error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : String(err),
+        },
+      });
+
+      await ctx.reply('Something went wrong while loading family config. Check logs.');
+      return;
+    }
+
+    if (!policy.allow) {
+      if (policy.reason === 'unknown_user' && ctx.chat.type === 'private') {
+        await ctx.reply(UNKNOWN_DM_REPLY);
+      }
+      return;
+    }
+
+    const scopeId = policy.scopeId;
 
     await writeLog({
       ts: now().toISOString(),

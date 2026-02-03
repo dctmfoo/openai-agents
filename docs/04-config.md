@@ -3,12 +3,12 @@
 This project is configured via local JSON files.
 
 - Example configs are committed under `config/*.example.json`.
-- Real configs live under `config/*.json` and are **gitignored**.
+- Real configs live under `HALO_HOME/config/*.json` and are **gitignored** (defaults to `~/.halo`).
 
 ## Files
 
-- `config/family.example.json` → `config/family.json`
-- `config/nodes.example.json` → `config/nodes.json`
+- `config/family.example.json` → `HALO_HOME/config/family.json`
+- `config/nodes.example.json` → `HALO_HOME/config/nodes.json`
 
 ## Principles
 
