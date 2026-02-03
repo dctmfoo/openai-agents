@@ -2,7 +2,7 @@
 
 This repository is a **public, portfolio-quality reference implementation** of a personal companion built with the **OpenAI Agents SDK (TypeScript)**.
 
-Primary interface: **Telegram (private chats only)**.
+Primary interface: **Telegram (private chats only)**. Secondary: local **Gateway + Tauri v2 admin app**.
 
 ## Project goals
 
@@ -19,10 +19,12 @@ Primary interface: **Telegram (private chats only)**.
 ## Repo structure
 
 - `src/prime/` — Prime (the main orchestrator agent).
+- `src/gateway/` — Gateway runtime + admin endpoints.
 - `src/interfaces/telegram/` — Telegram bot interface (Grammy).
 - `src/interfaces/cli/` — CLI runner for local testing.
 - `src/memory/` — markdown memory file loader/writer and (soon) distillation.
 - `src/utils/` — logging utilities.
+- `apps/admin/` — Tauri v2 admin app (Vite dev server).
 - `docs/` — architecture notes, setup.
 - `memory/` — daily memory logs (`YYYY-MM-DD.md`).
 - `SOUL.md`, `USER.md`, `MEMORY.md` — context files loaded into Prime.
@@ -36,6 +38,8 @@ From repo root:
 - `pnpm dev:telegram` — run the Telegram bot locally.
 - `pnpm dev:cli "…"` — run Prime from CLI.
 - `pnpm build` — TypeScript build.
+- `pnpm start:gateway` — run the Gateway runtime (after build).
+- `cd apps/admin && pnpm tauri:dev` — run the Tauri v2 admin app.
 
 ## Environment
 
@@ -43,6 +47,7 @@ Copy `.env.example` → `.env` and set:
 
 - `OPENAI_API_KEY`
 - `TELEGRAM_BOT_TOKEN`
+- `HALO_HOME` (optional) — durable runtime state root; defaults to `~/.halo`.
 
 ## Style & engineering rules
 
@@ -72,6 +77,10 @@ Roadmap:
 - If you add a feature, add a minimal doc note in `docs/`.
 - Prefer Conventional Commits:
   - `feat: …`, `fix: …`, `docs: …`, `chore: …`
+
+## Ralph runner (Codex loop)
+
+- `scripts/ralph/ralph.sh` expects `prd.json` with `branchName` and `userStories` (array of story objects with `id` + `passes`).
 
 ## Test-Driven Development (TDD)
 
@@ -105,3 +114,7 @@ Quality bar:
 - Prime behavior stays consistent.
 - Memory writeback rules don’t regress.
 - Safety boundaries remain enforced.
+
+## Work in progress
+
+- Family-first policy + transcript admin tooling (iterating).

@@ -51,4 +51,14 @@ Default stance: deny-by-default; allow only explicitly.
 
 ## Adapter enforcement
 
-The Telegram adapter checks `family.json` on each message. Unknown DMs receive a short refusal message and do not create a session. Group messages are accepted only when `parentsGroup.telegramChatId` matches the chat id.
+The Telegram adapter checks `family.json` on each message.
+
+- Unknown DMs receive a short refusal message and **do not create a session**.
+- Group messages are processed only when `parentsGroup.telegramChatId` matches the chat id.
+
+## Transcripts and clear/purge semantics
+
+- Transcripts are append-only JSONL under `HALO_HOME/transcripts`.
+- Derived session state (summaries/compactions) is stored separately under `HALO_HOME/sessions`.
+- Admin **Clear** clears only derived session state (keeps transcript history).
+- Admin **Purge** deletes both derived session state and transcripts (loopback-only + confirmation required).

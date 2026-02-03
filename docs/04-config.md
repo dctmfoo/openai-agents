@@ -20,11 +20,21 @@ This project is configured via local JSON files.
 
 Defines family members and the parents-only group.
 
+Location:
+- `HALO_HOME/config/family.json` (default: `~/.halo/config/family.json`)
+
+Bootstrap:
+
+```bash
+mkdir -p ~/.halo/config
+cp config/family.example.json ~/.halo/config/family.json
+```
+
 Fields:
 - `schemaVersion`: number
 - `familyId`: string
 - `members[]`: list of members (role + Telegram user IDs)
-- `parentsGroup`: optional, approved group chat id
+- `parentsGroup.telegramChatId`: optional, approved group chat id (Telegram group IDs can be **negative**)
 
 ## nodes.json
 
