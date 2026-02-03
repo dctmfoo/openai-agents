@@ -31,3 +31,6 @@ dist
 !/reports/
 !/reports/example.md
 !/prd.json.example
+
+# apps/admin: per-app lockfile (keep root lockfile as source of truth)
+/apps/admin/pnpm-lock.yaml

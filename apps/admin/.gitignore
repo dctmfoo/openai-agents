@@ -2,5 +2,12 @@ node_modules/
 target/
 dist/
 
+# Vite artifacts
+.vite/
+
 # Tauri build artifacts
 src-tauri/target/
+
+# Rust lockfile for the admin app is optional. We avoid committing it to keep
+# the repo root the single source of truth for dependency changes.
+src-tauri/Cargo.lock
