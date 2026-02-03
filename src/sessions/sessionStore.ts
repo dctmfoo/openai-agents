@@ -7,6 +7,7 @@ import { FileBackedSession } from './fileBackedSession.js';
 import { hashSessionId } from './sessionHash.js';
 import { TranscriptStore } from './transcriptStore.js';
 import { wrapWithTranscript } from './transcriptSession.js';
+import { wrapWithTranscriptAndDistillation } from './distillingTranscriptSession.js';
 
 export type SessionStoreOptions = {
   /**
@@ -17,6 +18,27 @@ export type SessionStoreOptions = {
    * have credentials available.
    */
   compactionEnabled?: boolean;
+
+  /**
+   * Enable deterministic (offline) memory distillation.
+   * Defaults to false.
+   */
+  distillationEnabled?: boolean;
+
+  /**
+   * Trigger distillation after this many appended transcript items.
+   */
+  distillationEveryNItems?: number;
+
+  /**
+   * Max transcript items to consider when distilling.
+   */
+  distillationMaxItems?: number;
+
+  /**
+   * Root directory for scoped memory writes (HALO_HOME).
+   */
+  rootDir?: string;
 
   /**
    * Model to use for compaction calls (responses.compact).
@@ -52,13 +74,18 @@ export type SessionStoreOptions = {
  */
 export class SessionStore {
   private readonly sessions = new Map<string, Session>();
-  private readonly opts: Required<Omit<SessionStoreOptions, 'compactionEnabled'>> & {
+  private readonly opts: Required<
+    Omit<SessionStoreOptions, 'compactionEnabled' | 'distillationEnabled'>
+  > & {
     compactionEnabled: boolean;
+    distillationEnabled: boolean;
   };
 
   constructor(opts: SessionStoreOptions = {}) {
     const envEnabled = process.env.HALO_COMPACTION_ENABLED;
     const defaultEnabled = Boolean(process.env.OPENAI_API_KEY);
+
+    const envDistillEnabled = process.env.HALO_DISTILLATION_ENABLED;
 
     this.opts = {
       compactionEnabled:
@@ -66,6 +93,14 @@ export class SessionStore {
         (envEnabled === undefined
           ? defaultEnabled
           : envEnabled !== '0' && envEnabled.toLowerCase() !== 'false'),
+      distillationEnabled:
+        opts.distillationEnabled ??
+        (envDistillEnabled !== undefined &&
+          envDistillEnabled !== '0' &&
+          envDistillEnabled.toLowerCase() !== 'false'),
+      distillationEveryNItems: opts.distillationEveryNItems ?? 20,
+      distillationMaxItems: opts.distillationMaxItems ?? 200,
+      rootDir: opts.rootDir ?? getHaloHome(),
       compactionModel: opts.compactionModel ?? 'gpt-5.2',
       compactionCandidateItemsThreshold: opts.compactionCandidateItemsThreshold ?? 12,
       baseDir: opts.baseDir ?? path.join(getHaloHome(), 'sessions'),
@@ -99,7 +134,15 @@ export class SessionStore {
       baseDir: this.opts.transcriptsDir,
     });
 
-    const wrapped = wrapWithTranscript(session, transcript);
+    const wrapped = this.opts.distillationEnabled
+      ? wrapWithTranscriptAndDistillation(session, transcript, scopeId, {
+          enabled: true,
+          everyNItems: this.opts.distillationEveryNItems,
+          maxItems: this.opts.distillationMaxItems,
+          rootDir: this.opts.rootDir,
+        })
+      : wrapWithTranscript(session, transcript);
+
     this.sessions.set(scopeId, wrapped);
     return wrapped;
   }
