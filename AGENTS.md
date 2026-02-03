@@ -118,3 +118,9 @@ Quality bar:
 ## Work in progress
 
 - Family-first policy + transcript admin tooling (iterating).
+
+## Docs MCP
+
+When working on OpenAI API / Agents SDK / Codex details, consult the OpenAI Developer Docs MCP server via Codex:
+- MCP name: `openaiDeveloperDocs`
+- URL: https://developers.openai.com/mcp
