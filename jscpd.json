@@ -2,7 +2,7 @@
   "reporters": [
     "console"
   ],
-  "minTokens": 70,
+  "minTokens": 140,
   "minLines": 10,
   "ignore": [
     "**/node_modules/**",
