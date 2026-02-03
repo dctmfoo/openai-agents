@@ -51,4 +51,10 @@ await startGateway({
     haloHome,
   },
   sessionStore,
+  config: {
+    schemaVersion: haloConfig.schemaVersion,
+    gateway: haloConfig.gateway,
+    features: haloConfig.features,
+    memory: haloConfig.memory,
+  },
 });
