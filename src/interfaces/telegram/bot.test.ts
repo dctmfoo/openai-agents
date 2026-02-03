@@ -71,7 +71,7 @@ describe('telegram adapter', () => {
       rootDir: '/root',
       bot,
       now,
-      deps: { appendJsonl, appendDailyNote, runPrime, loadFamilyConfig },
+      deps: { appendJsonl, appendScopedDailyNote: appendDailyNote, runPrime, loadFamilyConfig },
     });
 
     const reply = vi.fn().mockResolvedValue(undefined);
@@ -91,9 +91,10 @@ describe('telegram adapter', () => {
       channel: 'telegram',
       userId: '456',
       scopeId: 'telegram:dm:wags',
+      rootDir: '/root',
     });
-    expect(appendDailyNote).toHaveBeenCalledWith({ rootDir: '/root' }, '[user] hello');
-    expect(appendDailyNote).toHaveBeenCalledWith({ rootDir: '/root' }, '[prime] hi there');
+    expect(appendDailyNote).toHaveBeenCalledWith({ rootDir: '/root', scopeId: 'telegram:dm:wags' }, '[user] hello');
+    expect(appendDailyNote).toHaveBeenCalledWith({ rootDir: '/root', scopeId: 'telegram:dm:wags' }, '[prime] hi there');
     expect(reply).toHaveBeenCalledWith('hi there');
 
     expect(appendJsonl).toHaveBeenCalledTimes(3);
@@ -112,7 +113,7 @@ describe('telegram adapter', () => {
     createTelegramAdapter({
       token: 'token',
       bot,
-      deps: { appendJsonl, appendDailyNote, runPrime, loadFamilyConfig },
+      deps: { appendJsonl, appendScopedDailyNote: appendDailyNote, runPrime, loadFamilyConfig },
     });
 
     const reply = vi.fn().mockResolvedValue(undefined);
@@ -143,7 +144,7 @@ describe('telegram adapter', () => {
     createTelegramAdapter({
       token: 'token',
       bot,
-      deps: { appendJsonl, appendDailyNote, runPrime, loadFamilyConfig },
+      deps: { appendJsonl, appendScopedDailyNote: appendDailyNote, runPrime, loadFamilyConfig },
     });
 
     const reply = vi.fn().mockResolvedValue(undefined);
