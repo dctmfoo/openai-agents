@@ -26,6 +26,19 @@
           <button class="status__button" type="button" data-status-retry>Retry</button>
         </div>
       </div>
+      <div class="status" role="status" aria-live="polite" data-sessions-card>
+        <div class="status__header">
+          <div>
+            <div class="status__title" data-sessions-title>Sessions</div>
+            <div class="status__gateway" data-sessions-gateway>http://127.0.0.1:8787</div>
+          </div>
+          <div class="status__meta" data-sessions-meta>Checking...</div>
+        </div>
+        <div class="status__payload" data-sessions-payload>Loading sessions...</div>
+        <div class="status__actions">
+          <button class="status__button" type="button" data-sessions-retry>Refresh</button>
+        </div>
+      </div>
       <footer>
         <small>apps/admin/frontend</small>
       </footer>

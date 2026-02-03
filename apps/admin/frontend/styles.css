@@ -133,3 +133,20 @@ footer {
   margin-top: 8px;
   color: #7b6d5b;
 }
+
+.sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sessions__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sessions__label {
+  overflow-wrap: anywhere;
+}
