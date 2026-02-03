@@ -1,8 +1,9 @@
 import type { AgentInputItem, Session } from '@openai/agents';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { getHaloHome } from '../runtime/haloHome.js';
+import { hashSessionId } from './sessionHash.js';
 
 export type FileBackedSessionOptions = {
   sessionId?: string;
@@ -114,10 +115,6 @@ export class FileBackedSession implements Session {
   private async removeFile(): Promise<void> {
     await rm(this.filePath, { force: true });
   }
-}
-
-function hashSessionId(sessionId: string): string {
-  return createHash('sha256').update(sessionId).digest('hex');
 }
 
 function cloneAgentItem(item: AgentInputItem): AgentInputItem {

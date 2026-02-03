@@ -1,8 +1,12 @@
 import { OpenAIResponsesCompactionSession } from '@openai/agents';
 import type { Session } from '@openai/agents';
-import { FileBackedSession } from './fileBackedSession.js';
-import { getHaloHome } from '../runtime/haloHome.js';
+import { rm } from 'node:fs/promises';
 import path from 'node:path';
+import { getHaloHome } from '../runtime/haloHome.js';
+import { FileBackedSession } from './fileBackedSession.js';
+import { hashSessionId } from './sessionHash.js';
+import { TranscriptStore } from './transcriptStore.js';
+import { wrapWithTranscript } from './transcriptSession.js';
 
 export type SessionStoreOptions = {
   /**
@@ -27,13 +31,21 @@ export type SessionStoreOptions = {
   compactionCandidateItemsThreshold?: number;
 
   /**
-   * Base directory for persisted session files.
+   * Base directory for derived session state (summaries/compactions).
    */
   baseDir?: string;
+
+  /**
+   * Base directory for append-only transcripts.
+   */
+  transcriptsDir?: string;
 };
 
 /**
- * Mapping of `scopeId -> Session`, persisted via FileBackedSession.
+ * Mapping of `scopeId -> Session`.
+ *
+ * Derived session state (summaries/compactions) is persisted via FileBackedSession,
+ * while raw transcripts are stored separately as append-only logs.
  *
  * By default, sessions are wrapped by OpenAIResponsesCompactionSession only when
  * credentials are available (OPENAI_API_KEY) or when explicitly enabled.
@@ -57,6 +69,7 @@ export class SessionStore {
       compactionModel: opts.compactionModel ?? 'gpt-5.2',
       compactionCandidateItemsThreshold: opts.compactionCandidateItemsThreshold ?? 12,
       baseDir: opts.baseDir ?? path.join(getHaloHome(), 'sessions'),
+      transcriptsDir: opts.transcriptsDir ?? path.join(getHaloHome(), 'transcripts'),
     };
   }
 
@@ -81,14 +94,32 @@ export class SessionStore {
         })
       : underlyingSession;
 
-    this.sessions.set(scopeId, session);
-    return session;
+    const transcript = new TranscriptStore({
+      sessionId: scopeId,
+      baseDir: this.opts.transcriptsDir,
+    });
+
+    const wrapped = wrapWithTranscript(session, transcript);
+    this.sessions.set(scopeId, wrapped);
+    return wrapped;
   }
 
   async clear(scopeId: string): Promise<void> {
     const session = this.sessions.get(scopeId);
     if (!session) return;
     await session.clearSession();
+  }
+
+  async purge(scopeId: string): Promise<void> {
+    const session = this.sessions.get(scopeId);
+    if (session) {
+      await session.clearSession();
+      this.sessions.delete(scopeId);
+    }
+
+    const hashed = hashSessionId(scopeId);
+    await rm(path.join(this.opts.baseDir, `${hashed}.jsonl`), { force: true });
+    await rm(path.join(this.opts.transcriptsDir, `${hashed}.jsonl`), { force: true });
   }
 
   listScopeIds(): string[] {

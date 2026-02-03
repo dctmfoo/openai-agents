@@ -86,6 +86,8 @@ We will use:
 - `OpenAIResponsesCompactionSession` to keep long-running sessions small
 
 Notes:
+- Raw transcripts are append-only JSONL files under `HALO_HOME/transcripts` (source of truth).
+- Derived session state (summaries/compactions) is stored separately under `HALO_HOME/sessions`.
 - Compaction keeps user messages verbatim and replaces prior assistant/tool items with an encrypted compaction item.
 
 ## 6) Memory distillation (lasting vs temporal)
@@ -114,6 +116,11 @@ Distillation triggers (planned):
 - Session inventory:
 `GET /sessions` returns scope id strings (legacy shape).
 `GET /sessions-with-counts` returns `{ scopeId, itemCount }` objects.
+- Policy status:
+`GET /policy/status` returns per-scope allow/deny decisions (with reasons).
+- Local-only diagnostics:
+`GET /transcripts/tail?scopeId=...&lines=N` returns transcript tail (loopback only).
+`POST /sessions/:scopeId/purge?confirm=:scopeId` purges session + transcript (loopback + explicit confirm).
 
 ## 7) Security boundaries (summary)
 

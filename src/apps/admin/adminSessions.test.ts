@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildClearSessionUrl,
+  buildPurgeSessionUrl,
   buildSessionsUrl,
   formatSessionsError,
   formatSessionsPayload,
@@ -19,6 +20,12 @@ describe('admin sessions helpers', () => {
   it('buildClearSessionUrl encodes scope id', () => {
     expect(buildClearSessionUrl('http://x', 'telegram:889348242')).toBe(
       'http://x/sessions/telegram%3A889348242/clear',
+    );
+  });
+
+  it('buildPurgeSessionUrl appends confirmation', () => {
+    expect(buildPurgeSessionUrl('http://x', 'scope-1', 'scope-1')).toBe(
+      'http://x/sessions/scope-1/purge?confirm=scope-1',
     );
   });
 

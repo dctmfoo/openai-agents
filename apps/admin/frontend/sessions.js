@@ -8,6 +8,15 @@ export const buildClearSessionUrl = (gatewayBase, scopeId) => {
   return `${base}/sessions/${encodeURIComponent(scopeId)}/clear`;
 };
 
+export const buildPurgeSessionUrl = (gatewayBase, scopeId, confirm) => {
+  const base = gatewayBase.endsWith('/') ? gatewayBase.slice(0, -1) : gatewayBase;
+  const url = new URL(`${base}/sessions/${encodeURIComponent(scopeId)}/purge`);
+  if (confirm) {
+    url.searchParams.set('confirm', confirm);
+  }
+  return url.toString();
+};
+
 export const formatSessionsError = (error, gatewayBase) => {
   const reason = error instanceof Error ? error.message : String(error);
   return [

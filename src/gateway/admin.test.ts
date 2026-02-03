@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import { buildHaloHomePaths, createStatusHandler } from './admin.js';
 import { SessionStore } from '../sessions/sessionStore.js';
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { hashSessionId } from '../sessions/sessionHash.js';
 
 type MockResponse = {
   statusCode: number;
@@ -30,11 +31,41 @@ const makeMockResponse = (): MockResponse => {
   return res;
 };
 
-const makeSessionStore = async () => {
+const makeSessionStore = async (rootDir?: string) => {
   // SessionStore persists to disk by default. Use an isolated temp directory in tests
   // to avoid cross-test contamination from previous runs.
-  const baseDir = await mkdtemp(path.join(os.tmpdir(), 'halo-sessions-'));
-  return new SessionStore({ baseDir, compactionEnabled: false });
+  const baseRoot = rootDir ?? (await mkdtemp(path.join(os.tmpdir(), 'halo-sessions-')));
+  return new SessionStore({
+    baseDir: path.join(baseRoot, 'sessions'),
+    transcriptsDir: path.join(baseRoot, 'transcripts'),
+    compactionEnabled: false,
+  });
+};
+
+const writeFamilyConfig = async (rootDir: string) => {
+  const configDir = path.join(rootDir, 'config');
+  await mkdir(configDir, { recursive: true });
+  const payload = {
+    schemaVersion: 1,
+    familyId: 'test-family',
+    members: [
+      {
+        memberId: 'parent-1',
+        displayName: 'Pat',
+        role: 'parent',
+        telegramUserIds: [111],
+      },
+      {
+        memberId: 'child-1',
+        displayName: 'Kid',
+        role: 'child',
+        telegramUserIds: [222],
+      },
+    ],
+    parentsGroup: { telegramChatId: 999 },
+  };
+  await writeFile(path.join(configDir, 'family.json'), JSON.stringify(payload), 'utf8');
+  return payload;
 };
 
 describe('gateway status handler', () => {
@@ -289,5 +320,211 @@ describe('gateway status handler', () => {
 
     expect(res.statusCode).toBe(403);
     expect(JSON.parse(res.body)).toEqual({ error: 'forbidden' });
+  });
+
+  it('returns policy status for /policy/status', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    await writeFamilyConfig(haloHome);
+    const store = await makeSessionStore(haloHome);
+
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler({ method: 'GET', url: '/policy/status' }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain('application/json');
+
+    const payload = JSON.parse(res.body) as {
+      scopes: Array<{
+        scopeId: string;
+        scopeType: string;
+        allow: boolean;
+        reason?: string;
+        memberId?: string;
+        role?: string;
+        displayName?: string;
+      }>;
+    };
+
+    expect(payload.scopes).toEqual([
+      {
+        scopeId: 'telegram:dm:parent-1',
+        scopeType: 'dm',
+        allow: true,
+        memberId: 'parent-1',
+        role: 'parent',
+        displayName: 'Pat',
+      },
+      {
+        scopeId: 'telegram:dm:child-1',
+        scopeType: 'dm',
+        allow: true,
+        memberId: 'child-1',
+        role: 'child',
+        displayName: 'Kid',
+      },
+      {
+        scopeId: 'telegram:parents_group:999',
+        scopeType: 'parents_group',
+        allow: true,
+        memberId: 'parent-1',
+        role: 'parent',
+        displayName: 'Pat',
+      },
+      {
+        scopeId: 'telegram:parents_group:999',
+        scopeType: 'parents_group',
+        allow: false,
+        reason: 'child_in_parents_group',
+        memberId: 'child-1',
+        role: 'child',
+        displayName: 'Kid',
+      },
+    ]);
+  });
+
+  it('returns transcript tail for /transcripts/tail', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    const transcriptsDir = path.join(haloHome, 'transcripts');
+    const scopeId = 'scope-1';
+    const transcriptPath = path.join(transcriptsDir, `${hashSessionId(scopeId)}.jsonl`);
+    const entries = [
+      { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'one' }] },
+      { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'two' }] },
+      { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'three' }] },
+    ];
+
+    await mkdir(transcriptsDir, { recursive: true });
+    await writeFile(
+      transcriptPath,
+      entries.map((entry) => JSON.stringify(entry)).join('\n') + '\n',
+      'utf8',
+    );
+
+    const store = await makeSessionStore(haloHome);
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'GET',
+        url: `/transcripts/tail?scopeId=${encodeURIComponent(scopeId)}&lines=2`,
+        socket: { remoteAddress: '127.0.0.1' },
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain('application/json');
+    expect(JSON.parse(res.body)).toEqual(entries.slice(-2));
+  });
+
+  it('rejects non-local requests for /transcripts/tail', async () => {
+    const store = await makeSessionStore();
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths('/halo'),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'GET',
+        url: '/transcripts/tail?scopeId=scope-1&lines=1',
+        socket: { remoteAddress: '10.0.0.1' },
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body)).toEqual({ error: 'forbidden' });
+  });
+
+  it('purges session data for /sessions/:scopeId/purge', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    const store = await makeSessionStore(haloHome);
+    const session = store.getOrCreate('scope-1');
+
+    await session.addItems([
+      {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: 'hello' }],
+      },
+    ]);
+
+    const sessionPath = path.join(haloHome, 'sessions', `${hashSessionId('scope-1')}.jsonl`);
+    const transcriptPath = path.join(haloHome, 'transcripts', `${hashSessionId('scope-1')}.jsonl`);
+
+    expect(await stat(sessionPath)).toBeTruthy();
+    expect(await stat(transcriptPath)).toBeTruthy();
+
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'POST',
+        url: '/sessions/scope-1/purge?confirm=scope-1',
+        socket: { remoteAddress: '127.0.0.1' },
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({ ok: true, scopeId: 'scope-1' });
+    await expect(stat(sessionPath)).rejects.toThrow();
+    await expect(stat(transcriptPath)).rejects.toThrow();
+  });
+
+  it('requires confirmation for /sessions/:scopeId/purge', async () => {
+    const store = await makeSessionStore();
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths('/halo'),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'POST',
+        url: '/sessions/scope-1/purge',
+        socket: { remoteAddress: '127.0.0.1' },
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body)).toEqual({ error: 'confirm_required' });
   });
 });
