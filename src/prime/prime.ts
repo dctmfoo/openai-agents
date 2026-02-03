@@ -2,7 +2,7 @@ import { Agent, run, tool } from '@openai/agents';
 import { z } from 'zod';
 import process from 'node:process';
 import { appendScopedDailyNote, loadScopedContextFiles } from '../memory/scopedMemory.js';
-import { defaultSessionStore } from '../sessions/sessionStore.js';
+import { defaultSessionStore, type SessionStore } from '../sessions/sessionStore.js';
 
 export type PrimeRunOptions = {
   /** Stable identifier for the current speaker (Telegram user id, etc.) */
@@ -11,6 +11,8 @@ export type PrimeRunOptions = {
   scopeId?: string;
   /** Root directory for durable runtime state (HALO_HOME). Defaults to process.cwd() for CLI/dev. */
   rootDir?: string;
+  /** Optional session store override (used by gateway to apply config.json). */
+  sessionStore?: SessionStore;
   channel?: 'telegram' | 'cli';
 };
 
@@ -78,7 +80,8 @@ export async function runPrime(input: string, opts: PrimeRunOptions = {}) {
 
   const agent = await makePrimeAgent({ rootDir, scopeId });
 
-  const session = defaultSessionStore.getOrCreate(scopeId);
+  const store = opts.sessionStore ?? defaultSessionStore;
+  const session = store.getOrCreate(scopeId);
 
   const result = await run(agent, input, {
     session,
