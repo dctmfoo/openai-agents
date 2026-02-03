@@ -16,7 +16,8 @@
     "check:dup": "jscpd --config jscpd.json",
     "check:todo": "tsx src/dev/todoCheck.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "smoke:e2e": "tsx src/dev/smokeE2E.ts"
   },
   "keywords": [],
   "author": "",
