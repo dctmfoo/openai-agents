@@ -1,15 +1,21 @@
 import 'dotenv/config';
 
 import process from 'node:process';
+import path from 'node:path';
 import { startGateway } from './runtime.js';
+import { getHaloHome } from '../runtime/haloHome.js';
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) {
   throw new Error('Missing TELEGRAM_BOT_TOKEN in environment');
 }
 
-const logDir = process.env.LOG_DIR || 'logs';
-const haloHome = process.env.HALO_HOME || process.cwd();
+// Durable runtime state should live outside the repo.
+const haloHome = getHaloHome(process.env);
+
+// Allow overrides, but default to HALO_HOME/logs.
+const logDir = process.env.LOG_DIR || path.join(haloHome, 'logs');
+
 const adminHost = process.env.GATEWAY_HOST || '127.0.0.1';
 const adminPortRaw = process.env.GATEWAY_PORT || '8787';
 const adminPort = Number.parseInt(adminPortRaw, 10);
