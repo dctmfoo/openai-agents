@@ -35,3 +35,16 @@ Issue: https://github.com/dctmfoo/openai-agents/issues/29
 - Better onboarding (unknown DM flow)
 - Richer Prime behavior + sub-agents-as-tools
 - Evals harness for behavior regressions
+
+## Backlog (proposed)
+
+These are not committed milestones yet; they’re proposed follow-ups that naturally fall out of “LLM distillation + Admin tooling”. We track these in the GitHub Project and promote them into milestones when we’re ready.
+
+GitHub Project (canonical queue): https://github.com/users/dctmfoo/projects/2
+
+- **Audit + observability**: append-only distillation journal under `HALO_HOME/memory/distillation/` (JSONL) with timestamps, scopeId hash, transcript window, model, usage, and errors.
+- **Cost + safety guardrails**: cap input size / transcript items / runs-per-day per scope; fail closed with clear logs.
+- **Incremental distillation (cursored)**: distill only “new since last cursor” instead of reprocessing full history.
+- **Batch distill (safe queue)**: “distill all parents scopes” with concurrency=1, progress, and cancel.
+- **Failure backoff/retry policy**: exponential backoff per scope to avoid rapid retry loops.
+- **Docs + project hygiene**: keep docs + GitHub Project in sync on a regular cadence (see ops cron).
