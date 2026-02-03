@@ -16,6 +16,7 @@ start it automatically.
 cd apps/admin
 pnpm install
 pnpm tauri:dev
+# (equivalent to: pnpm dev + pnpm tauri dev)
 ```
 
 ## Build (release)
