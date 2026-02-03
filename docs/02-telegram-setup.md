@@ -36,3 +36,4 @@ pnpm start:gateway
 
 - Logs are written to `logs/events.jsonl` (gitignored).
 - Group chats are ignored.
+- Gateway admin exposes `GET /events/tail?lines=N` on the local-only host to inspect the last N log entries.

@@ -32,13 +32,63 @@ export type StatusContext = {
 };
 
 export type StatusHandler = (
-  req: { method?: string; url?: string },
+  req: {
+    method?: string;
+    url?: string;
+    socket?: { remoteAddress?: string | null };
+  },
   res: {
     statusCode: number;
     setHeader: (name: string, value: string) => void;
     end: (body?: string) => void;
   },
 ) => void | Promise<void>;
+
+const DEFAULT_TAIL_LINES = 50;
+
+const isLoopbackAddress = (address?: string | null) => {
+  if (!address) return false;
+  if (address === '::1') return true;
+  if (address.startsWith('::ffff:127.')) return true;
+  return address.startsWith('127.');
+};
+
+const parseTailLines = (value: string | null) => {
+  const parsed = Number.parseInt(value ?? '', 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_TAIL_LINES;
+  }
+  return parsed;
+};
+
+const parseJsonLine = (line: string) => {
+  try {
+    return JSON.parse(line) as unknown;
+  } catch {
+    return line;
+  }
+};
+
+const readTail = async (path: string, lines: number) => {
+  if (lines <= 0) return [];
+  try {
+    const raw = await readFile(path, 'utf8');
+    const entries = raw
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const tail = entries.length > lines ? entries.slice(-lines) : entries;
+    return tail.map(parseJsonLine);
+  } catch (err) {
+    if (err && typeof err === 'object' && 'code' in err) {
+      const { code } = err as { code?: string };
+      if (code === 'ENOENT') {
+        return [];
+      }
+    }
+    throw err;
+  }
+};
 
 export type AdminServerOptions = {
   host: string;
@@ -135,6 +185,20 @@ export function createStatusHandler(context: StatusContext): StatusHandler {
           }),
         );
         sendJson(200, summaries);
+        return;
+      }
+
+      if (req.method === 'GET' && path === '/events/tail') {
+        if (!isLoopbackAddress(req.socket?.remoteAddress)) {
+          sendJson(403, { error: 'forbidden' });
+          return;
+        }
+
+        const url = new URL(req.url ?? '', 'http://localhost');
+        const lines = parseTailLines(url.searchParams.get('lines'));
+        const logPath = join(context.haloHome.logs, 'events.jsonl');
+        const payload = await readTail(logPath, lines);
+        sendJson(200, payload);
         return;
       }
 
