@@ -114,6 +114,26 @@ h1 {
   outline-offset: 2px;
 }
 
+.sessions {
+  display: grid;
+  gap: 10px;
+}
+
+.sessions__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sessions__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .status--error {
   background: #ffe6e6;
   border-color: #e9a2a2;
