@@ -51,6 +51,7 @@ A **family-first AI companion** called "Prime" (codename "Halo") built with the 
 ### ✅ Memory Distillation (M5-M6 Complete)
 - **Deterministic distillation** — rule-based, no LLM calls
 - Patterns: `remember X`, `my X is Y` → durable facts
+- **LLM distillation (optional)** — nuanced extraction with `distillationMode: "llm"`
 - **Triggers**: every N items (default 20) or manual admin command
 - **Failure handling**: exponential backoff (30s → 10min cap)
 
@@ -86,9 +87,8 @@ A **family-first AI companion** called "Prime" (codename "Halo") built with the 
 
 ### 🔴 High Priority
 
-#### 1. LLM-based Distillation Option
-- Current deterministic rules are limited (`remember X`, `my X is Y`)
-- Add optional LLM distillation for nuanced fact extraction
+#### 1. LLM-based Distillation Option (Implemented)
+- Optional LLM distillation for nuanced fact extraction
 - Flag: `distillationMode: "deterministic" | "llm"`
 
 #### 2. Tool Framework
@@ -146,7 +146,7 @@ A **family-first AI companion** called "Prime" (codename "Halo") built with the 
 | Session compaction | ✅ Working | Via OpenAI Responses API |
 | Admin server | ✅ Working | HTTP API on port 8787 |
 | Tools | ❌ Not implemented | M7 focus |
-| LLM distillation | ❌ Not implemented | Recommended |
+| LLM distillation | ✅ Working | Optional mode in config |
 | Semantic search | ❌ Not implemented | Recommended |
 | Evals | ❌ Planned only | Documented but not built |
 | Multi-model | ❌ OpenAI only | Recommended |

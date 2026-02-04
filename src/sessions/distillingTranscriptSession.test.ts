@@ -46,9 +46,9 @@ describe('distillation trigger wiring', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-02-04T00:00:00Z'));
 
-    const originalDistill = distillationDeps.runDeterministicDistillation;
+    const originalDistill = distillationDeps.runDistillation;
     const spy = vi.fn().mockRejectedValue(new Error('boom'));
-    distillationDeps.runDeterministicDistillation = spy;
+    distillationDeps.runDistillation = spy;
 
     try {
       const rootDir = await mkdtemp(path.join(tmpdir(), 'halo-distill-'));
@@ -85,7 +85,7 @@ describe('distillation trigger wiring', () => {
       if (r3) await r3;
       expect(spy).toHaveBeenCalledTimes(2);
     } finally {
-      distillationDeps.runDeterministicDistillation = originalDistill;
+      distillationDeps.runDistillation = originalDistill;
       vi.useRealTimers();
     }
   });

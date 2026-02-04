@@ -7,10 +7,10 @@ import type {
   OpenAIResponsesCompactionAwareSession,
   OpenAIResponsesCompactionResult,
 } from '@openai/agents';
-import { runDeterministicDistillation } from '../memory/distillationRunner.js';
+import { runDistillation } from '../memory/distillationRunner.js';
 
 // Injectable indirection for tests (ESM named imports are hard to mock reliably).
-export const distillationDeps = { runDeterministicDistillation };
+export const distillationDeps = { runDistillation };
 
 export type DistillationConfig = {
   enabled: boolean;
@@ -20,6 +20,8 @@ export type DistillationConfig = {
   maxItems: number;
   /** Root dir for scoped memory writes (HALO_HOME). */
   rootDir: string;
+  /** Distillation mode: deterministic or llm. */
+  mode: 'deterministic' | 'llm';
 };
 
 class DistillingTranscriptSession implements Session {
@@ -85,10 +87,11 @@ class DistillingTranscriptSession implements Session {
 
         const all = await this.transcript.getItems();
         const slice = all.slice(Math.max(0, all.length - this.distill.maxItems));
-        await distillationDeps.runDeterministicDistillation({
+        await distillationDeps.runDistillation({
           rootDir: this.distill.rootDir,
           scopeId: this.scopeId,
           items: slice,
+          mode: this.distill.mode,
         });
 
         // Success clears backoff.

@@ -20,7 +20,11 @@ export type GatewayOptions = {
     schemaVersion?: number;
     gateway?: { host?: string; port?: number };
     features?: { compactionEnabled?: boolean; distillationEnabled?: boolean };
-    memory?: { distillationEveryNItems?: number; distillationMaxItems?: number };
+    memory?: {
+      distillationEveryNItems?: number;
+      distillationMaxItems?: number;
+      distillationMode?: 'deterministic' | 'llm';
+    };
   };
 };
 

@@ -8,6 +8,7 @@ import { hashSessionId } from './sessionHash.js';
 import { TranscriptStore } from './transcriptStore.js';
 import { wrapWithTranscript } from './transcriptSession.js';
 import { wrapWithTranscriptAndDistillation } from './distillingTranscriptSession.js';
+import type { DistillationMode } from '../memory/distillationRunner.js';
 
 export type SessionStoreOptions = {
   /**
@@ -24,6 +25,11 @@ export type SessionStoreOptions = {
    * Defaults to false.
    */
   distillationEnabled?: boolean;
+
+  /**
+   * Distillation mode: deterministic or LLM-based.
+   */
+  distillationMode?: DistillationMode;
 
   /**
    * Trigger distillation after this many appended transcript items.
@@ -98,6 +104,7 @@ export class SessionStore {
         (envDistillEnabled !== undefined &&
           envDistillEnabled !== '0' &&
           envDistillEnabled.toLowerCase() !== 'false'),
+      distillationMode: opts.distillationMode ?? 'deterministic',
       distillationEveryNItems: opts.distillationEveryNItems ?? 20,
       distillationMaxItems: opts.distillationMaxItems ?? 200,
       rootDir: opts.rootDir ?? getHaloHome(),
@@ -140,6 +147,7 @@ export class SessionStore {
           everyNItems: this.opts.distillationEveryNItems,
           maxItems: this.opts.distillationMaxItems,
           rootDir: this.opts.rootDir,
+          mode: this.opts.distillationMode,
         })
       : wrapWithTranscript(session, transcript);
 
