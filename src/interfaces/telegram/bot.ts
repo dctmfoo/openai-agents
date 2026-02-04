@@ -155,7 +155,14 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
     });
 
     try {
-      const result = await runPrimeImpl(text, { channel: 'telegram', userId, scopeId, rootDir });
+      const result = await runPrimeImpl(text, {
+        channel: 'telegram',
+        userId,
+        scopeId,
+        rootDir,
+        role: policy.role,
+        scopeType: policy.scopeType,
+      });
       const finalOutput = String(result.finalOutput ?? '').trim() || '(no output)';
 
       // Persist a lightweight transcript to the scoped daily memory file.

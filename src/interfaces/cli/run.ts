@@ -10,7 +10,12 @@ if (!input) {
   process.exit(1);
 }
 
-const result = await runPrime(input, { channel: 'cli', userId: 'local' });
+const result = await runPrime(input, {
+  channel: 'cli',
+  userId: 'local',
+  role: 'parent',
+  scopeType: 'dm',
+});
 
 // Remember everything (raw transcript) in daily memory.
 await appendDailyNote({ rootDir: process.cwd() }, `[user] ${input}`);
