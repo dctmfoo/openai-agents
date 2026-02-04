@@ -29,8 +29,13 @@ const HALO_CONFIG_SCHEMA = z.object({
     .object({
       distillationEveryNItems: z.number().int().positive().default(20),
       distillationMaxItems: z.number().int().positive().default(200),
+      distillationMode: z.enum(['deterministic', 'llm']).default('deterministic'),
     })
-    .default({ distillationEveryNItems: 20, distillationMaxItems: 200 }),
+    .default({
+      distillationEveryNItems: 20,
+      distillationMaxItems: 200,
+      distillationMode: 'deterministic',
+    }),
 
   family: FAMILY_CONFIG_SCHEMA,
 });

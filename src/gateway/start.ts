@@ -27,6 +27,7 @@ const sessionStore = new SessionStore({
   // Canonical settings come from HALO_HOME/config.json
   compactionEnabled: haloConfig.features.compactionEnabled,
   distillationEnabled: haloConfig.features.distillationEnabled,
+  distillationMode: haloConfig.memory.distillationMode,
   distillationEveryNItems: haloConfig.memory.distillationEveryNItems,
   distillationMaxItems: haloConfig.memory.distillationMaxItems,
   rootDir: haloHome,

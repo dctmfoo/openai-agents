@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { loadFamilyConfig } from '../runtime/familyConfig.js';
 import { hashSessionId } from '../sessions/sessionHash.js';
 import type { SessionStore } from '../sessions/sessionStore.js';
-import { runDeterministicDistillation } from '../memory/distillationRunner.js';
+import { runDistillation } from '../memory/distillationRunner.js';
 
 export type HaloHomePaths = {
   root: string;
@@ -35,6 +35,7 @@ type GatewayStatus = {
     memory?: {
       distillationEveryNItems?: number;
       distillationMaxItems?: number;
+      distillationMode?: 'deterministic' | 'llm';
     };
   };
 };
@@ -351,10 +352,12 @@ export function createStatusHandler(context: StatusContext): StatusHandler {
 
         const session = context.sessionStore.getOrCreate(scopeId);
         const items = await session.getItems();
-        const result = await runDeterministicDistillation({
+        const mode = context.config?.memory?.distillationMode ?? 'deterministic';
+        const result = await runDistillation({
           rootDir: context.haloHome.root,
           scopeId,
           items,
+          mode,
         });
 
         sendJson(200, {

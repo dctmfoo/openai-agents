@@ -10,7 +10,8 @@
   },
   "memory": {
     "distillationEveryNItems": 20,
-    "distillationMaxItems": 200
+    "distillationMaxItems": 200,
+    "distillationMode": "deterministic"
   },
   "family": {
     "schemaVersion": 1,
