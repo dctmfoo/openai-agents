@@ -29,5 +29,5 @@ This project follows common personal-companion architecture patterns:
 
 - You can run Prime locally (CLI) and it completes a useful task end-to-end.
 - Prime can use at least 2–3 tools safely.
-- Prime writes logs + memory updates deterministically.
-- A small regression eval suite prevents obvious breakages.
+- The system writes append-only logs and deterministic markdown memory updates.
+- A small deterministic test suite + smoke test catches obvious breakages (evals later).

@@ -1,34 +1,47 @@
 # Scope (v1)
 
-## What we’re building first
+## What we're building first
 
 ### Interfaces
 
-- **CLI-first** (single command to run Prime)
-- Telegram / dashboard / voice: later phases
+- **Telegram-first** (family DMs + parents-only group)
+- CLI available for local testing (`pnpm dev:cli "..."`)
+- Dashboard / voice: later phases
 
 ### Core architecture
 
 - **Prime agent**: one conversational entity that users interact with
-- **Specialists**: initially implemented as **agents-as-tools** (manager pattern)
-- **Tool policy layer**: wrappers enforcing allowlists + approvals
+- **Specialists**: planned (not implemented yet)
+- **Tool policy layer**: planned; today we only enforce interface-level policy and keep tools minimal
 - **Tracing/logging**: write events to `logs/events.jsonl`
 
 ### Memory (v1)
 
-File-based, simple and reliable:
+File-based, simple and reliable.
 
-- `memory/core/*.md` — identity/preferences that should persist
-- `memory/daily/YYYY-MM-DD.md` — daily log / raw notes
-- Retrieval: grep/ripgrep + simple heuristics
+Scoped memory lives under `<rootDir>/memory/scopes/<hash>/`.
+- `MEMORY.md` — durable facts (preferences, relationships)
+- `YYYY-MM-DD.md` — temporal daily notes
+- Telegram adapter appends lightweight `[user]` / `[prime]` lines to the daily file
+
+`rootDir` is `HALO_HOME` when running via the gateway. In `dev:telegram` and `dev:cli`, it defaults to the repo root.
+
+CLI mode:
+- Writes a repo-local daily log at `memory/YYYY-MM-DD.md` via `appendDailyNote` (non-scoped)
+- Prime still reads scoped memory (plus `SOUL.md` + `USER.md`) for its context; the unscoped CLI log is not used for retrieval
+
+CLI still uses the default SessionStore (HALO_HOME) unless you override it.
+
+Retrieval:
+- Prime loads `SOUL.md`, `USER.md`, scoped `MEMORY.md`, and scoped daily notes for today + yesterday
+- There is no grep/search layer yet
 
 (Cold/semantic memory later.)
 
 ### Evals (v1)
 
-- A small **regression suite** that must stay green
-- Some checks are deterministic; some are model-graded (“LLM-as-judge”)
-- Add pass^k for reliability (run same eval N times)
+- Deterministic unit tests + a smoke test must stay green
+- LLM-as-judge evals and pass^k reliability checks are planned, not implemented yet
 
 ## What we’re explicitly not doing in v1
 

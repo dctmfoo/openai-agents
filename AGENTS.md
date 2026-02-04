@@ -22,11 +22,11 @@ Primary interface: **Telegram (private chats only)**. Secondary: local **Gateway
 - `src/gateway/` — Gateway runtime + admin endpoints.
 - `src/interfaces/telegram/` — Telegram bot interface (Grammy).
 - `src/interfaces/cli/` — CLI runner for local testing.
-- `src/memory/` — markdown memory file loader/writer and (soon) distillation.
+- `src/memory/` — markdown memory file loader/writer and distillation.
 - `src/utils/` — logging utilities.
 - `apps/admin/` — Tauri v2 admin app (Vite dev server).
 - `docs/` — architecture notes, setup.
-- `memory/` — daily memory logs (`YYYY-MM-DD.md`).
+- `memory/` — repo-local daily memory logs (`YYYY-MM-DD.md`, CLI-only).
 - `SOUL.md`, `USER.md`, `MEMORY.md` — context files loaded into Prime.
 - `logs/` — runtime logs (`events.jsonl`, gitignored).
 
@@ -63,13 +63,13 @@ Copy `.env.example` → `.env` and set:
 
 ## Memory model (markdown files)
 
-- `MEMORY.md`: curated, lasting facts.
-- `memory/YYYY-MM-DD.md`: temporal facts / daily log.
+- Scoped memory lives under `HALO_HOME/memory/scopes/<hash>/MEMORY.md` and `HALO_HOME/memory/scopes/<hash>/YYYY-MM-DD.md`.
+- `memory/YYYY-MM-DD.md` in the repo is a CLI-only daily log; Prime reads scoped memory for context.
 
-Roadmap:
-- Use Agents SDK **Sessions** for conversation state.
-- Use **OpenAIResponsesCompactionSession** (Responses API `/responses/compact`) to keep sessions small.
-- After compaction, run a memory distiller to write lasting vs temporal facts into markdown files.
+Current:
+- Agents SDK **Sessions** for conversation state.
+- **OpenAIResponsesCompactionSession** (Responses API `/responses/compact`) when compaction is enabled.
+- A deterministic memory distiller writes lasting vs temporal facts into scoped markdown files.
 
 ## Contribution workflow
 

@@ -20,11 +20,7 @@ OPENAI_API_KEY=...
 
 ## 2a) Configure family policy (required)
 
-Halo reads the family allowlist from:
-
-- `HALO_HOME/config/family.json` (default: `~/.halo/config/family.json`)
-
-Start by copying the example:
+Telegram policy is loaded from `HALO_HOME/config/family.json` and cached at startup.
 
 ```bash
 mkdir -p ~/.halo/config
@@ -35,6 +31,15 @@ cp config/family.example.json ~/.halo/config/family.json
 Notes:
 - `members[].telegramUserIds` are **Telegram user IDs** (positive integers).
 - `parentsGroup.telegramChatId` is the **approved group chat id**. Telegram group IDs can be **negative**.
+
+## 2b) Configure gateway config.json (required for `pnpm start:gateway`)
+
+```bash
+cp config/halo.example.json ~/.halo/config.json
+# edit ~/.halo/config.json (gateway, features, memory, and an embedded family block)
+```
+
+The embedded `family` block in `config.json` is validated at startup, but the bot policy still reads `config/family.json` today. Keep the two in sync.
 
 ## 3) Run locally
 
@@ -54,10 +59,13 @@ pnpm start:gateway
 
 ## Notes
 
-- Logs are written to `~/.halo/logs/events.jsonl` by default (gitignored).
+- `dev:telegram` writes logs to `./logs/events.jsonl` by default (override with `LOG_DIR`).
+- `start:gateway` writes logs to `HALO_HOME/logs/events.jsonl` by default.
+- `dev:telegram` writes scoped memory under `./memory/scopes/<hash>/`; `start:gateway` writes under `HALO_HOME/memory/scopes/<hash>/`.
 - Unknown DMs are refused (and do not create a session).
-- Group chats are ignored unless the group matches `parentsGroup.telegramChatId`.
-- `OPENAI_API_KEY` is optional if you authenticate via Codex device OAuth.
+- Group chats are ignored unless the group matches `parentsGroup.telegramChatId` and the sender is in the family list.
+- Family config is loaded once at startup; restart to pick up changes.
+- `OPENAI_API_KEY` is required for real model calls (smoke tests stub the model).
 - Gateway admin exposes:
   - `GET /events/tail?lines=N` (loopback-only)
   - `GET /transcripts/tail?scopeId=...&lines=N` (loopback-only)
