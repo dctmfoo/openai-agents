@@ -47,14 +47,23 @@ Legend: ✅ allow, ❌ deny
 Default stance: deny-by-default; allow only explicitly.
 
 - child tools: deny unless specifically safe/read-only
-- parent tools: allowed only via node boundary + explicit allowlist
+- parent tools: allowed only via explicit allowlist (node boundary planned)
 
 ## Adapter enforcement
 
-The Telegram adapter checks `family.json` on each message.
+The Telegram adapter loads family config from `HALO_HOME/config/family.json` and caches it for the life of the process (restart to pick up changes). The admin `/policy/status` endpoint reads the same file. The embedded `family` block in `config.json` is validated for gateway startup, but it is not used for policy decisions yet.
 
-- Unknown DMs receive a short refusal message and **do not create a session**.
-- Group messages are processed only when `parentsGroup.telegramChatId` matches the chat id.
+- Unknown DMs receive a short refusal message ("Hi! This bot is private to our family. Please ask a parent to invite you.") and **do not create a session**.
+- Non-private chats (groups) are ignored unless `parentsGroup.telegramChatId` matches the chat id and the sender is a known member.
+- Children in the approved parents-group are silently denied (no reply).
+
+### Scope ID format
+
+Scope IDs are deterministic strings used to isolate sessions and memory:
+- DM scope: `telegram:dm:<memberId>` (e.g., `telegram:dm:wags`)
+- Parents group scope: `telegram:parents_group:<chatId>` (e.g., `telegram:parents_group:-123456789`)
+
+These scope IDs are hashed (SHA256) to derive file paths for sessions, transcripts, and scoped memory.
 
 ## Transcripts and clear/purge semantics
 

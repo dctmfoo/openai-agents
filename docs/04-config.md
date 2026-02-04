@@ -1,16 +1,27 @@
 # Configuration
 
-This project is configured via a single JSON file.
+This project currently uses **two** JSON files.
 
-- Example config is committed under `config/halo.example.json`.
-- Real config lives at: `HALO_HOME/config.json` (defaults to `~/.halo/config.json`).
+- `HALO_HOME/config.json` (gateway runtime settings, required for `pnpm start:gateway`)
+- `HALO_HOME/config/family.json` (Telegram policy + `/policy/status`)
 
-## Files
+Examples:
+- `config/halo.example.json`
+- `config/family.example.json`
 
-- `config/halo.example.json` → `HALO_HOME/config.json`
+## Bootstrap
+
+```bash
+cp config/halo.example.json ~/.halo/config.json
+mkdir -p ~/.halo/config
+cp config/family.example.json ~/.halo/config/family.json
+# edit both files
+```
 
 Notes:
-- `TELEGRAM_BOT_TOKEN` stays in the environment (don’t put secrets in config.json).
+- `TELEGRAM_BOT_TOKEN` stays in the environment (don't put secrets in config.json).
+- Gateway host/port can be overridden via `GATEWAY_HOST` and `GATEWAY_PORT` env vars.
+- Both files share the same `family` schema; `config.json` includes a `family` block but the bot still reads `config/family.json` today. Keep them in sync.
 
 ## Principles
 
@@ -18,27 +29,64 @@ Notes:
 - Validate with Zod at startup.
 - Version configs with `schemaVersion`.
 
-## family.json
+## config.json structure
 
-Defines family members and the parents-only group.
+The unified config includes:
 
-Location:
-- `HALO_HOME/config/family.json` (default: `~/.halo/config/family.json`)
-
-Bootstrap:
-
-```bash
-mkdir -p ~/.halo/config
-cp config/family.example.json ~/.halo/config/family.json
+```json
+{
+  "schemaVersion": 1,
+  "gateway": {
+    "host": "127.0.0.1",
+    "port": 8787
+  },
+  "features": {
+    "compactionEnabled": false,
+    "distillationEnabled": false
+  },
+  "memory": {
+    "distillationEveryNItems": 20,
+    "distillationMaxItems": 200
+  },
+  "family": { ... }
+}
 ```
+
+### gateway
+
+- `host`: bind address (default `127.0.0.1`)
+- `port`: bind port (default `8787`)
+
+### features
+
+- `compactionEnabled`: enable OpenAI Responses API compaction (default `false` in config file)
+- `distillationEnabled`: enable deterministic memory distillation (default `false`)
+
+Notes:
+- When running via the gateway (`pnpm start:gateway`), the config file values are used.
+- `HALO_COMPACTION_ENABLED` and `HALO_DISTILLATION_ENABLED` only affect SessionStore defaults when it is instantiated without explicit options (CLI/dev paths).
+- SessionStore defaults also auto-enable compaction when `OPENAI_API_KEY` is set, unless you pass explicit options.
+
+### memory
+
+- `distillationEveryNItems`: trigger distillation after N transcript items (default `20`)
+- `distillationMaxItems`: max items to consider when distilling (default `200`)
+
+### family
+
+Defines family members and the parents-only group (schema used by both `config.json` and `config/family.json`).
 
 Fields:
 - `schemaVersion`: number
 - `familyId`: string
-- `members[]`: list of members (role + Telegram user IDs)
+- `members[]`: list of members
+  - `memberId`: stable identifier (e.g. `wags`)
+  - `displayName`: human-readable name
+  - `role`: `parent` | `child`
+  - `telegramUserIds`: array of Telegram user IDs for this member
 - `parentsGroup.telegramChatId`: optional, approved group chat id (Telegram group IDs can be **negative**)
 
-## nodes.json
+## nodes.json (future)
 
 Defines nodes and which member they belong to.
 

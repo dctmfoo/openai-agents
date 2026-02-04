@@ -1,5 +1,11 @@
 # AGENTS.md — Contributor & Agent Guide
 
+> **📌 Main Project Document: [docs/PROJECT-OVERVIEW.md](docs/PROJECT-OVERVIEW.md)**
+> 
+> For comprehensive project status, feature tracking, tech stack, and roadmap, see the Project Overview. This file (AGENTS.md) is for contributor/agent guidelines.
+
+---
+
 This repository is a **public, portfolio-quality reference implementation** of a personal companion built with the **OpenAI Agents SDK (TypeScript)**.
 
 Primary interface: **Telegram (private chats only)**. Secondary: local **Gateway + Tauri v2 admin app**.
@@ -8,7 +14,7 @@ Primary interface: **Telegram (private chats only)**. Secondary: local **Gateway
 
 - Showcase **idiomatic OpenAI Agents SDK patterns** (Agent/Runner, tools, sessions, compaction, guardrails, tracing).
 - Keep the code **elegant and teachable**: small modules, minimal abstractions, strong typing.
-- Be “working software” (not fully production hardened), but a solid foundation others can extend.
+- Be "working software" (not fully production hardened), but a solid foundation others can extend.
 
 ## Non-goals (for now)
 
@@ -22,11 +28,11 @@ Primary interface: **Telegram (private chats only)**. Secondary: local **Gateway
 - `src/gateway/` — Gateway runtime + admin endpoints.
 - `src/interfaces/telegram/` — Telegram bot interface (Grammy).
 - `src/interfaces/cli/` — CLI runner for local testing.
-- `src/memory/` — markdown memory file loader/writer and (soon) distillation.
+- `src/memory/` — markdown memory file loader/writer and distillation.
 - `src/utils/` — logging utilities.
 - `apps/admin/` — Tauri v2 admin app (Vite dev server).
-- `docs/` — architecture notes, setup.
-- `memory/` — daily memory logs (`YYYY-MM-DD.md`).
+- `docs/` — architecture notes, setup, **PROJECT-OVERVIEW.md**.
+- `memory/` — repo-local daily memory logs (`YYYY-MM-DD.md`, CLI-only).
 - `SOUL.md`, `USER.md`, `MEMORY.md` — context files loaded into Prime.
 - `logs/` — runtime logs (`events.jsonl`, gitignored).
 
@@ -58,18 +64,18 @@ Copy `.env.example` → `.env` and set:
   - memory distillation
   - evals
 - Avoid cleverness. Optimize for clarity.
-- Don’t claim actions you didn’t take.
+- Don't claim actions you didn't take.
 - Never persist obvious secrets in memory files.
 
 ## Memory model (markdown files)
 
-- `MEMORY.md`: curated, lasting facts.
-- `memory/YYYY-MM-DD.md`: temporal facts / daily log.
+- Scoped memory lives under `HALO_HOME/memory/scopes/<hash>/MEMORY.md` and `HALO_HOME/memory/scopes/<hash>/YYYY-MM-DD.md`.
+- `memory/YYYY-MM-DD.md` in the repo is a CLI-only daily log; Prime reads scoped memory for context.
 
-Roadmap:
-- Use Agents SDK **Sessions** for conversation state.
-- Use **OpenAIResponsesCompactionSession** (Responses API `/responses/compact`) to keep sessions small.
-- After compaction, run a memory distiller to write lasting vs temporal facts into markdown files.
+Current:
+- Agents SDK **Sessions** for conversation state.
+- **OpenAIResponsesCompactionSession** (Responses API `/responses/compact`) when compaction is enabled.
+- A deterministic memory distiller writes lasting vs temporal facts into scoped markdown files.
 
 ## Contribution workflow
 
@@ -105,19 +111,19 @@ We keep two layers of tests:
 - LLM-as-judge checks for tone/consistency
 - regression prompts for memory distillation
 
-Planned commands (we will wire these soon):
+Commands:
 
 - `pnpm test` — unit tests
-- `pnpm evals` — behavioral evals
+- `pnpm evals` — behavioral evals (planned)
 
 Quality bar:
 - Prime behavior stays consistent.
-- Memory writeback rules don’t regress.
+- Memory writeback rules don't regress.
 - Safety boundaries remain enforced.
 
 ## Work in progress
 
-- Family-first policy + transcript admin tooling (iterating).
+See [docs/PROJECT-OVERVIEW.md](docs/PROJECT-OVERVIEW.md) for current milestone and feature status.
 
 ## Docs MCP
 
