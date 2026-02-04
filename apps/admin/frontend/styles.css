@@ -150,6 +150,14 @@ h1 {
   gap: 8px;
 }
 
+.sessions__result {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #6b5f4c;
+  overflow-wrap: anywhere;
+}
+
 .status--error {
   background: #ffe6e6;
   border-color: #e9a2a2;
