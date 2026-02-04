@@ -17,6 +17,11 @@ export const buildPurgeSessionUrl = (gatewayBase, scopeId, confirm) => {
   return url.toString();
 };
 
+export const buildDistillSessionUrl = (gatewayBase, scopeId) => {
+  const base = gatewayBase.endsWith('/') ? gatewayBase.slice(0, -1) : gatewayBase;
+  return `${base}/sessions/${encodeURIComponent(scopeId)}/distill`;
+};
+
 export const formatSessionsError = (error, gatewayBase) => {
   const reason = error instanceof Error ? error.message : String(error);
   return [

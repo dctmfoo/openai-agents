@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { loadFamilyConfig } from '../runtime/familyConfig.js';
 import { hashSessionId } from '../sessions/sessionHash.js';
 import type { SessionStore } from '../sessions/sessionStore.js';
+import { runDeterministicDistillation } from '../memory/distillationRunner.js';
 
 export type HaloHomePaths = {
   root: string;
@@ -325,6 +326,43 @@ export function createStatusHandler(context: StatusContext): StatusHandler {
 
         await context.sessionStore.clear(scopeId);
         sendJson(200, { ok: true, scopeId });
+        return;
+      }
+
+      if (req.method === 'POST' && path.startsWith('/sessions/') && path.endsWith('/distill')) {
+        const rawScopeId = path.slice('/sessions/'.length, -'/distill'.length);
+        if (!rawScopeId) {
+          sendJson(400, { error: 'missing_scope_id' });
+          return;
+        }
+
+        let scopeId: string;
+        try {
+          scopeId = decodeURIComponent(rawScopeId);
+        } catch {
+          sendJson(400, { error: 'invalid_scope_id' });
+          return;
+        }
+
+        if (context.config?.features?.distillationEnabled === false) {
+          sendJson(409, { error: 'distillation_disabled' });
+          return;
+        }
+
+        const session = context.sessionStore.getOrCreate(scopeId);
+        const items = await session.getItems();
+        const result = await runDeterministicDistillation({
+          rootDir: context.haloHome.root,
+          scopeId,
+          items,
+        });
+
+        sendJson(200, {
+          ok: true,
+          scopeId,
+          durableFacts: result.durableFacts,
+          temporalNotes: result.temporalNotes,
+        });
         return;
       }
 

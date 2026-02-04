@@ -6,6 +6,7 @@ import {
 } from './status.js';
 import {
   buildClearSessionUrl,
+  buildDistillSessionUrl,
   buildPurgeSessionUrl,
   buildSessionsUrl,
   formatSessionsError,
@@ -189,11 +190,22 @@ const setSessionsSuccess = (payload) => {
           const actions = document.createElement('div');
           actions.className = 'sessions__actions';
 
+          const result = document.createElement('div');
+          result.className = 'sessions__result';
+          result.setAttribute('data-distill-result-scope-id', entry.scopeId);
+          result.textContent = '';
+
           const tailBtn = document.createElement('button');
           tailBtn.className = 'status__button';
           tailBtn.type = 'button';
           tailBtn.textContent = 'Tail';
           tailBtn.setAttribute('data-tail-scope-id', entry.scopeId);
+
+          const distillBtn = document.createElement('button');
+          distillBtn.className = 'status__button';
+          distillBtn.type = 'button';
+          distillBtn.textContent = 'Distill now';
+          distillBtn.setAttribute('data-distill-scope-id', entry.scopeId);
 
           const clearBtn = document.createElement('button');
           clearBtn.className = 'status__button';
@@ -208,11 +220,13 @@ const setSessionsSuccess = (payload) => {
           purgeBtn.setAttribute('data-purge-scope-id', entry.scopeId);
 
           actions.appendChild(tailBtn);
+          actions.appendChild(distillBtn);
           actions.appendChild(clearBtn);
           actions.appendChild(purgeBtn);
 
           row.appendChild(label);
           row.appendChild(actions);
+          row.appendChild(result);
           list.appendChild(row);
         }
       }
@@ -258,6 +272,24 @@ const clearSession = async (scopeId) => {
   if (!response.ok) {
     throw new Error(`Failed to clear session ${scopeId} (${response.status}).`);
   }
+};
+
+const distillSession = async (scopeId) => {
+  const url = buildDistillSessionUrl(gatewayBase, scopeId);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { accept: 'application/json' },
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (response.status === 409 && payload && payload.error === 'distillation_disabled') {
+      throw new Error('Distillation is disabled (config.features.distillationEnabled=false).');
+    }
+    throw new Error(`Failed to distill session ${scopeId} (${response.status}).`);
+  }
+
+  return payload;
 };
 
 const refreshSessions = async () => {
@@ -508,6 +540,35 @@ sessionsList?.addEventListener('click', async (event) => {
       setSessionsError(error);
     } finally {
       clearButton.removeAttribute('disabled');
+    }
+    return;
+  }
+
+  const distillButton = target.closest('[data-distill-scope-id]');
+  if (distillButton instanceof HTMLElement) {
+    const scopeId = distillButton.getAttribute('data-distill-scope-id');
+    if (!scopeId) return;
+
+    const resultEl = sessionsList?.querySelector(
+      `[data-distill-result-scope-id="${CSS.escape(scopeId)}"]`,
+    );
+
+    try {
+      distillButton.setAttribute('disabled', 'disabled');
+      if (resultEl) resultEl.textContent = 'Distilling…';
+      const payload = await distillSession(scopeId);
+      const facts = payload?.durableFacts ?? '?';
+      const notes = payload?.temporalNotes ?? '?';
+      if (resultEl) resultEl.textContent = `Done: durableFacts=${facts}, temporalNotes=${notes}`;
+    } catch (error) {
+      if (resultEl) {
+        const msg = error instanceof Error ? error.message : String(error);
+        resultEl.textContent = `Error: ${msg}`;
+      } else {
+        setSessionsError(error);
+      }
+    } finally {
+      distillButton.removeAttribute('disabled');
     }
     return;
   }

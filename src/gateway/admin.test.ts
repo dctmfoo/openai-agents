@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { AgentInputItem } from '@openai/agents';
 
 import { buildHaloHomePaths, createStatusHandler } from './admin.js';
 import { SessionStore } from '../sessions/sessionStore.js';
@@ -38,9 +39,17 @@ const makeSessionStore = async (rootDir?: string) => {
   return new SessionStore({
     baseDir: path.join(baseRoot, 'sessions'),
     transcriptsDir: path.join(baseRoot, 'transcripts'),
+    rootDir: baseRoot,
     compactionEnabled: false,
+    distillationEnabled: false,
   });
 };
+
+const userMessage = (text: string): AgentInputItem => ({
+  type: 'message',
+  role: 'user',
+  content: [{ type: 'input_text', text }],
+});
 
 const writeFamilyConfig = async (rootDir: string) => {
   const configDir = path.join(rootDir, 'config');
@@ -235,6 +244,81 @@ describe('gateway status handler', () => {
     expect(payload.scopeId).toBe('scope-1');
     expect((await s1.getItems()).length).toBe(0);
     expect((await s2.getItems()).length).toBe(1);
+  });
+
+  it('runs deterministic distillation for /sessions/:scopeId/distill', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    const store = await makeSessionStore(haloHome);
+
+    const scopeId = 'telegram:dm:wags';
+    const session = store.getOrCreate(scopeId);
+    await session.addItems([
+      userMessage('remember: I like black coffee'),
+      userMessage('today I walked 10k steps'),
+    ]);
+
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+      config: { features: { distillationEnabled: true } },
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'POST',
+        url: `/sessions/${encodeURIComponent(scopeId)}/distill`,
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain('application/json');
+
+    const payload = JSON.parse(res.body) as {
+      ok: boolean;
+      scopeId: string;
+      durableFacts: number;
+      temporalNotes: number;
+    };
+    expect(payload.ok).toBe(true);
+    expect(payload.scopeId).toBe(scopeId);
+    expect(payload.durableFacts).toBe(1);
+    expect(payload.temporalNotes).toBe(1);
+  });
+
+  it('returns 409 when distillation is disabled for /sessions/:scopeId/distill', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    const store = await makeSessionStore(haloHome);
+
+    const scopeId = 'telegram:dm:wags';
+    store.getOrCreate(scopeId);
+
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+      config: { features: { distillationEnabled: false } },
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'POST',
+        url: `/sessions/${encodeURIComponent(scopeId)}/distill`,
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(409);
+    expect(JSON.parse(res.body)).toEqual({ error: 'distillation_disabled' });
   });
 
   it('returns last N event lines for /events/tail', async () => {

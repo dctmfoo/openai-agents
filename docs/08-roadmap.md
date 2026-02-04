@@ -23,6 +23,7 @@ Issue: https://github.com/dctmfoo/openai-agents/issues/29
 ## Next
 
 ### M6: Distillation triggers + failure handling
+- Admin "Distill now" control (manual trigger per scope)
 - When do we distill? (on compaction vs every N messages)
 - What happens on distillation failure? (log + continue)
 
