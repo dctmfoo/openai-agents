@@ -9,6 +9,9 @@ import type {
 } from '@openai/agents';
 import { runDeterministicDistillation } from '../memory/distillationRunner.js';
 
+// Injectable indirection for tests (ESM named imports are hard to mock reliably).
+export const distillationDeps = { runDeterministicDistillation };
+
 export type DistillationConfig = {
   enabled: boolean;
   /** Trigger distillation after this many appended items. */
@@ -27,6 +30,9 @@ class DistillingTranscriptSession implements Session {
 
   private pending = 0;
   private running: Promise<void> | null = null;
+
+  private distillFailureCount = 0;
+  private distillBackoffUntilMs = 0;
 
   constructor(options: {
     session: Session;
@@ -63,23 +69,47 @@ class DistillingTranscriptSession implements Session {
     // Reset pending first to avoid repeated triggers if we crash.
     this.pending = 0;
 
+    const now = Date.now();
+    if (now < this.distillBackoffUntilMs) {
+      return;
+    }
+
     // Fire-and-forget (but serialized) distillation.
     // We don't want to block the user reply on distillation.
     this.running = (this.running ?? Promise.resolve())
       .then(async () => {
+        const gateNow = Date.now();
+        if (gateNow < this.distillBackoffUntilMs) {
+          return;
+        }
+
         const all = await this.transcript.getItems();
         const slice = all.slice(Math.max(0, all.length - this.distill.maxItems));
-        await runDeterministicDistillation({
+        await distillationDeps.runDeterministicDistillation({
           rootDir: this.distill.rootDir,
           scopeId: this.scopeId,
           items: slice,
         });
+
+        // Success clears backoff.
+        this.distillFailureCount = 0;
+        this.distillBackoffUntilMs = 0;
       })
       .catch((err) => {
+        // Exponential backoff (per scope) so a failing distillation doesn't retry every message.
+        this.distillFailureCount += 1;
+        const backoffMs = Math.min(
+          10 * 60 * 1000,
+          30 * 1000 * 2 ** Math.max(0, this.distillFailureCount - 1),
+        );
+        this.distillBackoffUntilMs = Date.now() + backoffMs;
+
         // Fail-safe: never break the chat loop because distillation failed.
         // We don't have a structured logger at this layer; callers can monitor gateway event logs.
         console.error('halo: distillation failed', {
           scopeId: this.scopeId,
+          backoffMs,
+          backoffUntilMs: this.distillBackoffUntilMs,
           error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : String(err),
         });
       })
