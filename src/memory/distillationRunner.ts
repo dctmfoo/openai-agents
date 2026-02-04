@@ -5,7 +5,7 @@ import { distillMemoryFromItemsLLM } from './llmDistiller.js';
 import { appendScopedDailyNote } from './scopedMemory.js';
 import { appendScopedLongTermFacts } from './scopedLongTerm.js';
 
-export type RunDistillationOptions = {
+type RunDistillationOptions = {
   rootDir: string;
   scopeId: string;
   items: AgentInputItem[];
@@ -47,7 +47,7 @@ async function writeDistilled(
  * - durableFacts -> HALO_HOME/memory/scopes/<hash>/MEMORY.md
  * - temporalNotes -> HALO_HOME/memory/scopes/<hash>/YYYY-MM-DD.md
  */
-export async function runDeterministicDistillation(
+async function runDeterministicDistillation(
   opts: RunDistillationOptions,
 ): Promise<{ durableFacts: number; temporalNotes: number }> {
   const distilled = distillMemoryFromItems(opts.items);
@@ -60,7 +60,7 @@ export async function runDeterministicDistillation(
  * - durableFacts -> HALO_HOME/memory/scopes/<hash>/MEMORY.md
  * - temporalNotes -> HALO_HOME/memory/scopes/<hash>/YYYY-MM-DD.md
  */
-export async function runLLMDistillation(
+async function runLLMDistillation(
   opts: RunDistillationOptions,
 ): Promise<{ durableFacts: number; temporalNotes: number }> {
   const distilled = await distillMemoryFromItemsLLM(opts.items);
