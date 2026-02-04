@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -42,15 +42,24 @@ describe('memory boundaries (scope isolation)', () => {
 
     const date = new Date('2026-02-03T12:00:00Z');
 
-    await appendScopedDailyNote({ rootDir, scopeId: dmScope }, 'dm-only', date);
-    await appendScopedDailyNote({ rootDir, scopeId: groupScope }, 'group-only', date);
+    // loadScopedContextFiles uses the current system date to determine "today".
+    // Freeze time so this test is deterministic.
+    vi.useFakeTimers();
+    vi.setSystemTime(date);
 
-    const dmTodayPath = getScopedDailyPath({ rootDir, scopeId: dmScope }, date);
+    try {
+      await appendScopedDailyNote({ rootDir, scopeId: dmScope }, 'dm-only', date);
+      await appendScopedDailyNote({ rootDir, scopeId: groupScope }, 'group-only', date);
 
-    const ctx = await loadScopedContextFiles({ rootDir, scopeId: dmScope });
+      const dmTodayPath = getScopedDailyPath({ rootDir, scopeId: dmScope }, date);
 
-    expect(ctx.todayPath).toBe(dmTodayPath);
-    expect(ctx.today).toContain('dm-only');
-    expect(ctx.today).not.toContain('group-only');
+      const ctx = await loadScopedContextFiles({ rootDir, scopeId: dmScope });
+
+      expect(ctx.todayPath).toBe(dmTodayPath);
+      expect(ctx.today).toContain('dm-only');
+      expect(ctx.today).not.toContain('group-only');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
