@@ -18,7 +18,12 @@ describe('prime tool registry', () => {
     const names = tools.map((tool) => tool.name).sort();
 
     expect(names).toEqual(
-      [TOOL_NAMES.readScopedMemory, TOOL_NAMES.rememberDaily, TOOL_NAMES.webSearch].sort(),
+      [
+        TOOL_NAMES.readScopedMemory,
+        TOOL_NAMES.rememberDaily,
+        TOOL_NAMES.semanticSearch,
+        TOOL_NAMES.webSearch,
+      ].sort(),
     );
   });
 
@@ -37,6 +42,7 @@ describe('prime tool registry', () => {
 
     expect(names).toContain(TOOL_NAMES.readScopedMemory);
     expect(names).toContain(TOOL_NAMES.rememberDaily);
+    expect(names).toContain(TOOL_NAMES.semanticSearch);
     expect(names).not.toContain(TOOL_NAMES.webSearch);
   });
 });

@@ -58,5 +58,6 @@ await startGateway({
     features: haloConfig.features,
     memory: haloConfig.memory,
     childSafe: haloConfig.childSafe,
+    semanticMemory: haloConfig.semanticMemory,
   },
 });

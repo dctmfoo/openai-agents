@@ -15,25 +15,41 @@ type ScopeType = NonNullable<ToolPolicyContext['scopeType']>;
 type AgeGroup = NonNullable<ToolPolicyContext['ageGroup']>;
 
 const PARENT_ALLOWLIST: Record<ScopeType, ToolName[]> = {
-  dm: [TOOL_NAMES.readScopedMemory, TOOL_NAMES.rememberDaily, TOOL_NAMES.webSearch],
+  dm: [
+    TOOL_NAMES.readScopedMemory,
+    TOOL_NAMES.rememberDaily,
+    TOOL_NAMES.semanticSearch,
+    TOOL_NAMES.webSearch,
+  ],
   parents_group: [
     TOOL_NAMES.readScopedMemory,
     TOOL_NAMES.rememberDaily,
+    TOOL_NAMES.semanticSearch,
     TOOL_NAMES.webSearch,
   ],
 };
 
 const CHILD_ALLOWLIST: Record<AgeGroup, Record<ScopeType, ToolName[]>> = {
   child: {
-    dm: [TOOL_NAMES.readScopedMemory, TOOL_NAMES.rememberDaily],
+    dm: [TOOL_NAMES.readScopedMemory, TOOL_NAMES.rememberDaily, TOOL_NAMES.semanticSearch],
     parents_group: [],
   },
   teen: {
-    dm: [TOOL_NAMES.readScopedMemory, TOOL_NAMES.rememberDaily, TOOL_NAMES.webSearch],
+    dm: [
+      TOOL_NAMES.readScopedMemory,
+      TOOL_NAMES.rememberDaily,
+      TOOL_NAMES.semanticSearch,
+      TOOL_NAMES.webSearch,
+    ],
     parents_group: [],
   },
   young_adult: {
-    dm: [TOOL_NAMES.readScopedMemory, TOOL_NAMES.rememberDaily, TOOL_NAMES.webSearch],
+    dm: [
+      TOOL_NAMES.readScopedMemory,
+      TOOL_NAMES.rememberDaily,
+      TOOL_NAMES.semanticSearch,
+      TOOL_NAMES.webSearch,
+    ],
     parents_group: [],
   },
 };

@@ -30,6 +30,20 @@ export type GatewayOptions = {
       maxMessageLength?: number;
       blockedTopics?: string[];
     };
+    semanticMemory?: {
+      enabled?: boolean;
+      embeddingProvider?: 'openai' | 'gemini';
+      embeddingModel?: string;
+      embeddingDimensions?: number;
+      vecExtensionPath?: string;
+      syncIntervalMinutes?: number;
+      search?: {
+        fusionMethod?: 'rrf';
+        vectorWeight?: number;
+        textWeight?: number;
+        minScore?: number;
+      };
+    };
   };
 };
 

@@ -28,8 +28,11 @@ Issue: https://github.com/dctmfoo/openai-agents/issues/29
 ## Current milestone
 
 ### M7: Boundary-first tool policy
+Issue: https://github.com/dctmfoo/openai-agents/issues/53
+
 - Tools remain deny-by-default
 - Add safe read-only tools with explicit scope constraints
+- Carryover (M6 follow-up): https://github.com/dctmfoo/openai-agents/issues/37
 
 ## Later
 
@@ -43,9 +46,9 @@ These are not committed milestones yet; they’re proposed follow-ups that natur
 
 GitHub Project (canonical queue): https://github.com/users/dctmfoo/projects/2
 
-- **Audit + observability**: append-only distillation journal under `HALO_HOME/memory/distillation/` (JSONL) with timestamps, scopeId hash, transcript window, model, usage, and errors.
-- **Cost + safety guardrails**: cap input size / transcript items / runs-per-day per scope; fail closed with clear logs.
-- **Incremental distillation (cursored)**: distill only “new since last cursor” instead of reprocessing full history.
-- **Batch distill (safe queue)**: “distill all parents scopes” with concurrency=1, progress, and cancel.
+- **Audit + observability**: append-only distillation journal under `HALO_HOME/memory/distillation/` (JSONL) with timestamps, scopeId hash, transcript window, model, usage, and errors. Issue: https://github.com/dctmfoo/openai-agents/issues/54
+- **Cost + safety guardrails**: cap input size / transcript items / runs-per-day per scope; fail closed with clear logs. Issue: https://github.com/dctmfoo/openai-agents/issues/55
+- **Incremental distillation (cursored)**: distill only “new since last cursor” instead of reprocessing full history. Issue: https://github.com/dctmfoo/openai-agents/issues/56
+- **Batch distill (safe queue)**: “distill all parents scopes” with concurrency=1, progress, and cancel. Issue: https://github.com/dctmfoo/openai-agents/issues/57
 - ~~**Failure backoff/retry policy**: exponential backoff per scope to avoid rapid retry loops.~~ (shipped in M6)
-- **Docs + project hygiene**: keep docs + GitHub Project in sync on a regular cadence (see ops cron).
+- **Docs + project hygiene**: keep docs + GitHub Project in sync on a regular cadence (see ops cron). Issue: https://github.com/dctmfoo/openai-agents/issues/58
