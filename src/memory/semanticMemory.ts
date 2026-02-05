@@ -42,6 +42,8 @@ export class SemanticMemory {
   private searchEngine: { search: (request: { query: string; embedding: number[]; topK: number }) => Promise<SearchResult[]> } | null = null;
   private syncManager: { sync: () => Promise<void> } | null = null;
   private readonly searchOptions: Partial<SearchEngineOptions>;
+  private lastSyncAt = 0;
+  private static readonly MIN_SYNC_INTERVAL_MS = 30_000; // 30 seconds
 
   constructor(options: {
     rootDir: string;
@@ -149,7 +151,14 @@ export class SemanticMemory {
   async search(query: string, topK: number, semanticConfig?: SemanticMemoryConfig): Promise<SearchResult[]> {
     await this.ensureInitialized(semanticConfig);
     if (!this.searchEngine) return [];
-    await this.syncManager?.sync();
+
+    // Debounce sync: skip if synced within MIN_SYNC_INTERVAL_MS
+    const now = Date.now();
+    if (now - this.lastSyncAt >= SemanticMemory.MIN_SYNC_INTERVAL_MS) {
+      await this.syncManager?.sync();
+      this.lastSyncAt = now;
+    }
+
     const vectors = await this.embedder([query]);
     return this.searchEngine.search({ query, embedding: vectors[0], topK });
   }
