@@ -92,6 +92,8 @@ describe('telegram adapter', () => {
       userId: '456',
       scopeId: 'telegram:dm:wags',
       rootDir: '/root',
+      role: 'parent',
+      scopeType: 'dm',
     });
     expect(appendDailyNote).toHaveBeenCalledWith({ rootDir: '/root', scopeId: 'telegram:dm:wags' }, '[user] hello');
     expect(appendDailyNote).toHaveBeenCalledWith({ rootDir: '/root', scopeId: 'telegram:dm:wags' }, '[prime] hi there');

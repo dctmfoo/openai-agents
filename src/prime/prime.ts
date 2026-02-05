@@ -1,8 +1,10 @@
-import { Agent, run, tool } from '@openai/agents';
-import { z } from 'zod';
+import { Agent, run } from '@openai/agents';
 import process from 'node:process';
-import { appendScopedDailyNote, loadScopedContextFiles } from '../memory/scopedMemory.js';
+import { loadScopedContextFiles } from '../memory/scopedMemory.js';
 import { defaultSessionStore, type SessionStore } from '../sessions/sessionStore.js';
+import { buildPrimeTools } from '../tools/registry.js';
+import { TOOL_NAMES } from '../tools/toolNames.js';
+import type { PrimeContext } from './types.js';
 
 export type PrimeRunOptions = {
   /** Stable identifier for the current speaker (Telegram user id, etc.) */
@@ -14,35 +16,39 @@ export type PrimeRunOptions = {
   /** Optional session store override (used by gateway to apply config.json). */
   sessionStore?: SessionStore;
   channel?: 'telegram' | 'cli';
+  role?: 'parent' | 'child';
+  scopeType?: 'dm' | 'parents_group';
 };
 
-const getTime = tool({
-  name: 'get_time',
-  description: 'Get the current time in ISO format. Use when you need an exact timestamp.',
-  parameters: z.object({}),
-  execute: async () => {
-    return new Date().toISOString();
-  },
-});
+const buildToolInstructions = (toolNames: string[]) => {
+  const instructions: string[] = [];
 
-function makeRememberDailyTool(options: { rootDir: string; scopeId: string }) {
-  return tool({
-    name: 'remember_daily',
-    description:
-      "Append a short bullet to today's daily memory file (scoped). Use when the user wants something recorded.",
-    parameters: z.object({ note: z.string().min(1) }),
-    execute: async ({ note }) => {
-      const path = await appendScopedDailyNote(
-        { rootDir: options.rootDir, scopeId: options.scopeId },
-        note,
-      );
-      return `Saved to ${path}`;
-    },
+  if (toolNames.includes(TOOL_NAMES.readScopedMemory)) {
+    instructions.push(
+      'If you need to recall prior notes, call read_scoped_memory with target long_term, today, or yesterday.',
+    );
+  }
+
+  if (toolNames.includes(TOOL_NAMES.rememberDaily)) {
+    instructions.push(
+      "If the user asks you to remember something or take a note, call remember_daily with a short bullet.",
+    );
+  }
+
+  if (toolNames.includes(TOOL_NAMES.webSearch)) {
+    instructions.push(
+      'If you need to look something up on the web, call web_search_call.',
+    );
+  }
+
+  return instructions;
+};
+
+async function makePrimeAgent(context: PrimeContext) {
+  const ctx = await loadScopedContextFiles({
+    rootDir: context.rootDir,
+    scopeId: context.scopeId,
   });
-}
-
-async function makePrimeAgent(options: { rootDir: string; scopeId: string }) {
-  const ctx = await loadScopedContextFiles({ rootDir: options.rootDir, scopeId: options.scopeId });
 
   const contextBlock = [
     '---',
@@ -57,7 +63,8 @@ async function makePrimeAgent(options: { rootDir: string; scopeId: string }) {
     .filter(Boolean)
     .join('\n');
 
-  const rememberDaily = makeRememberDailyTool(options);
+  const tools = buildPrimeTools(context);
+  const toolInstructions = buildToolInstructions(tools.map((tool) => tool.name));
 
   return new Agent({
     name: 'Prime',
@@ -65,26 +72,38 @@ async function makePrimeAgent(options: { rootDir: string; scopeId: string }) {
       'You are Prime, a personal AI companion.',
       'Be helpful, direct, and concise.',
       'Do not claim you performed actions you did not do.',
-      'If you need the current time, call get_time.',
-      'If the user asks you to remember something or take a note, call remember_daily with a short bullet.',
+      ...toolInstructions,
       '',
       contextBlock,
     ].join('\n'),
-    tools: [getTime, rememberDaily],
+    tools,
   });
 }
 
 export async function runPrime(input: string, opts: PrimeRunOptions = {}) {
   const scopeId = opts.scopeId ?? `default:${opts.channel ?? 'unknown'}:${opts.userId ?? 'unknown'}`;
   const rootDir = opts.rootDir ?? process.cwd();
+  const role =
+    opts.role ?? (opts.channel === 'cli' ? 'parent' : undefined);
+  const scopeType =
+    opts.scopeType ?? (opts.channel === 'cli' ? 'dm' : undefined);
 
-  const agent = await makePrimeAgent({ rootDir, scopeId });
+  const context: PrimeContext = {
+    rootDir,
+    scopeId,
+    channel: opts.channel,
+    role,
+    scopeType,
+  };
+
+  const agent = await makePrimeAgent(context);
 
   const store = opts.sessionStore ?? defaultSessionStore;
   const session = store.getOrCreate(scopeId);
 
   const result = await run(agent, input, {
     session,
+    context,
   });
 
   return {

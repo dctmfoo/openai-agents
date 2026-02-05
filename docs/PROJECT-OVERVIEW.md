@@ -31,6 +31,7 @@ A **family-first AI companion** called "Prime" (codename "Halo") built with the 
 - **Telegram bot** — DMs + parents-only group chat
 - **CLI** — local testing (`pnpm dev:cli "..."`)
 - **Gateway server** — HTTP admin API on port 8787
+- **Tool framework** — deny-by-default registry with SDK hosted tools + scoped memory tools
 
 ### ✅ Privacy & Scopes
 - **Scoped conversations** — DM facts stay private, group facts shared among parents
@@ -145,7 +146,7 @@ A **family-first AI companion** called "Prime" (codename "Halo") built with the 
 | Deterministic distillation | ✅ Working | Rule-based fact extraction |
 | Session compaction | ✅ Working | Via OpenAI Responses API |
 | Admin server | ✅ Working | HTTP API on port 8787 |
-| Tools | ❌ Not implemented | M7 focus |
+| Tools | 🟡 In progress | Framework + scoped memory + hosted web search |
 | LLM distillation | ✅ Working | Optional mode in config |
 | Semantic search | ❌ Not implemented | Recommended |
 | Evals | ❌ Planned only | Documented but not built |
