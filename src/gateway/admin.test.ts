@@ -543,6 +543,68 @@ describe('gateway status handler', () => {
     expect(JSON.parse(res.body)).toEqual({ error: 'forbidden' });
   });
 
+  it('allows parents to read a child transcript', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    await writeFamilyConfig(haloHome);
+    const store = await makeSessionStore(haloHome);
+    const session = store.getOrCreate('telegram:dm:child-1');
+
+    await session.addItems([userMessage('hi there')]);
+
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'GET',
+        url: '/sessions/telegram%3Adm%3Achild-1/transcript?role=parent',
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(200);
+    const payload = JSON.parse(res.body) as unknown[];
+    expect(payload.length).toBe(1);
+    expect(payload[0]).toMatchObject({ role: 'user' });
+  });
+
+  it('rejects transcript reads when requester is not a parent', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    await writeFamilyConfig(haloHome);
+    const store = await makeSessionStore(haloHome);
+    const session = store.getOrCreate('telegram:dm:child-1');
+
+    await session.addItems([userMessage('hi there')]);
+
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'GET',
+        url: '/sessions/telegram%3Adm%3Achild-1/transcript?role=child',
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body)).toEqual({ error: 'forbidden' });
+  });
+
   it('purges session data for /sessions/:scopeId/purge', async () => {
     const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
     const store = await makeSessionStore(haloHome);

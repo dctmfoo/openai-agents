@@ -54,6 +54,9 @@ const requirePrimeContext = (runContext?: RunContext<PrimeContext>): PrimeContex
   if (!context?.rootDir || !context.scopeId) {
     throw new Error('Prime context missing rootDir/scopeId for scoped memory tools');
   }
+  if (context.role === 'child' && context.scopeType === 'parents_group') {
+    throw new Error('Child role cannot access parents group memory');
+  }
   return context;
 };
 

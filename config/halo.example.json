@@ -13,6 +13,11 @@
     "distillationMaxItems": 200,
     "distillationMode": "deterministic"
   },
+  "childSafe": {
+    "enabled": true,
+    "maxMessageLength": 800,
+    "blockedTopics": []
+  },
   "family": {
     "schemaVersion": 1,
     "familyId": "default",

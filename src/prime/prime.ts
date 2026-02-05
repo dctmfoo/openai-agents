@@ -4,6 +4,7 @@ import { loadScopedContextFiles } from '../memory/scopedMemory.js';
 import { defaultSessionStore, type SessionStore } from '../sessions/sessionStore.js';
 import { buildPrimeTools } from '../tools/registry.js';
 import { TOOL_NAMES } from '../tools/toolNames.js';
+import { filterResponse } from '../policies/contentFilter.js';
 import type { PrimeContext } from './types.js';
 
 export type PrimeRunOptions = {
@@ -44,6 +45,33 @@ const buildToolInstructions = (toolNames: string[]) => {
   return instructions;
 };
 
+type PrimeInstructionOptions = {
+  role?: 'parent' | 'child';
+  toolInstructions: string[];
+  contextBlock: string;
+};
+
+export function buildPrimeInstructions(options: PrimeInstructionOptions): string {
+  const childSafety = options.role === 'child'
+    ? [
+        'Use simple, encouraging language suitable for a child.',
+        'Focus on safe, educational, and positive topics.',
+        "Never share information from other family members' private conversations.",
+        'If asked about adult topics, gently redirect to age-appropriate alternatives.',
+      ]
+    : [];
+
+  return [
+    'You are Prime, a personal AI companion.',
+    'Be helpful, direct, and concise.',
+    'Do not claim you performed actions you did not do.',
+    ...childSafety,
+    ...options.toolInstructions,
+    '',
+    options.contextBlock,
+  ].join('\n');
+}
+
 async function makePrimeAgent(context: PrimeContext) {
   const ctx = await loadScopedContextFiles({
     rootDir: context.rootDir,
@@ -68,14 +96,11 @@ async function makePrimeAgent(context: PrimeContext) {
 
   return new Agent({
     name: 'Prime',
-    instructions: [
-      'You are Prime, a personal AI companion.',
-      'Be helpful, direct, and concise.',
-      'Do not claim you performed actions you did not do.',
-      ...toolInstructions,
-      '',
+    instructions: buildPrimeInstructions({
+      role: context.role,
+      toolInstructions,
       contextBlock,
-    ].join('\n'),
+    }),
     tools,
   });
 }
@@ -106,8 +131,11 @@ export async function runPrime(input: string, opts: PrimeRunOptions = {}) {
     context,
   });
 
+  const outputText = typeof result.finalOutput === 'string' ? result.finalOutput : '';
+  const filtered = filterResponse(outputText, context.role ?? 'parent');
+
   return {
-    finalOutput: result.finalOutput,
+    finalOutput: filtered.filtered,
     raw: result,
   };
 }

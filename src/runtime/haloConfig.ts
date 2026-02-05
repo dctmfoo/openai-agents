@@ -37,6 +37,18 @@ const HALO_CONFIG_SCHEMA = z.object({
       distillationMode: 'deterministic',
     }),
 
+  childSafe: z
+    .object({
+      enabled: z.boolean().default(true),
+      maxMessageLength: z.number().int().positive().default(800),
+      blockedTopics: z.array(z.string()).default([]),
+    })
+    .default({
+      enabled: true,
+      maxMessageLength: 800,
+      blockedTopics: [],
+    }),
+
   family: FAMILY_CONFIG_SCHEMA,
 });
 

@@ -37,6 +37,7 @@ A **family-first AI companion** called "Prime" (codename "Halo") built with the 
 - **Scoped conversations** — DM facts stay private, group facts shared among parents
 - **Family config** — `family.json` defines members, roles, Telegram IDs
 - **Unknown user blocking** — won't engage with strangers
+- **Child-safe mode** — child-only prompt + output filtering + guarded memory access + parent transcript access (opt-in)
 
 ### ✅ Memory System
 - **Scoped memory** — `HALO_HOME/memory/scopes/<hash>/`
