@@ -131,3 +131,18 @@ Always use the OpenAI developer documentation MCP server if you need to work wit
 
 - MCP name: `openaiDeveloperDocs`
 - URL: https://developers.openai.com/mcp
+
+## Dead Code / Unused Exports (knip)
+
+This repo runs `knip` (via `pnpm check:deadcode`) in CI. Knip traces export reachability from the entry points defined in `knip.json`.
+
+**Critical rule: Only `export` what is actually imported by another module.**
+
+- If a type, function, or constant is only used within the same file → **do NOT export it**
+- If it's only used within the same directory but not imported from outside → **do NOT export it**
+- Knip will fail CI if any export is unreachable from the entry points
+- This applies to types too: `type Foo = ...` not `export type Foo = ...` unless another file imports `Foo`
+
+**Before adding `export`**, check: "Is another file going to `import { X } from` this module?" If no, keep it internal.
+
+Common mistake: exporting helper types "just in case" — don't do this. Export only the public API surface.
