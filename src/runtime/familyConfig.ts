@@ -6,15 +6,27 @@ import { getHaloHome } from './haloHome.js';
 const FAMILY_SCHEMA_VERSION = 1;
 
 const MemberRoleSchema = z.enum(['parent', 'child']);
+const AgeGroupSchema = z.enum(['child', 'teen', 'young_adult']);
 
 const MemberSchema = z
   .object({
     memberId: z.string().min(1),
     displayName: z.string().min(1),
     role: MemberRoleSchema,
+    ageGroup: AgeGroupSchema.optional(),
+    parentalVisibility: z.boolean().optional(),
     telegramUserIds: z.array(z.number().int().positive()).min(1),
   })
-  .strict();
+  .strict()
+  .superRefine((member, ctx) => {
+    if (member.role === 'child' && !member.ageGroup) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'ageGroup is required for child members',
+        path: ['ageGroup'],
+      });
+    }
+  });
 
 const ParentsGroupSchema = z
   .object({
@@ -32,6 +44,7 @@ export const FAMILY_CONFIG_SCHEMA = z
   .strict();
 
 export type FamilyConfig = z.infer<typeof FAMILY_CONFIG_SCHEMA>;
+type AgeGroup = z.infer<typeof AgeGroupSchema>;
 
 export type FamilyConfigLoadOptions = {
   env?: NodeJS.ProcessEnv;

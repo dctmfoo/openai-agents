@@ -161,6 +161,7 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
         scopeId,
         rootDir,
         role: policy.role,
+        ageGroup: policy.ageGroup,
         scopeType: policy.scopeType,
       });
       const finalOutput = String(result.finalOutput ?? '').trim() || '(no output)';

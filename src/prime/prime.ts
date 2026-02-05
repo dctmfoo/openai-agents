@@ -18,6 +18,7 @@ export type PrimeRunOptions = {
   sessionStore?: SessionStore;
   channel?: 'telegram' | 'cli';
   role?: 'parent' | 'child';
+  ageGroup?: 'child' | 'teen' | 'young_adult';
   scopeType?: 'dm' | 'parents_group';
 };
 
@@ -47,24 +48,43 @@ const buildToolInstructions = (toolNames: string[]) => {
 
 type PrimeInstructionOptions = {
   role?: 'parent' | 'child';
+  ageGroup?: 'child' | 'teen' | 'young_adult';
   toolInstructions: string[];
   contextBlock: string;
 };
 
 export function buildPrimeInstructions(options: PrimeInstructionOptions): string {
-  const childSafety = options.role === 'child'
-    ? [
-        'Use simple, encouraging language suitable for a child.',
-        'Focus on safe, educational, and positive topics.',
-        "Never share information from other family members' private conversations.",
-        'If asked about adult topics, gently redirect to age-appropriate alternatives.',
-      ]
-    : [];
+  const childSafety =
+    options.role === 'child'
+      ? [
+          "Never share information from other family members' private conversations.",
+          'If asked about adult topics, gently redirect to age-appropriate alternatives.',
+        ]
+      : [];
+
+  const tierInstructions =
+    options.role === 'child'
+      ? options.ageGroup === 'teen'
+        ? [
+            'Use age-appropriate language and be study-focused.',
+            'Encourage critical thinking and safe curiosity.',
+          ]
+        : options.ageGroup === 'young_adult'
+          ? [
+              'Be a respectful study partner with a near-adult tone.',
+              'Offer structured help for exams and long-form learning.',
+            ]
+          : [
+              'Use simple vocabulary with short sentences.',
+              'Keep the tone encouraging, educational, and fun.',
+            ]
+      : [];
 
   return [
     'You are Prime, a personal AI companion.',
     'Be helpful, direct, and concise.',
     'Do not claim you performed actions you did not do.',
+    ...tierInstructions,
     ...childSafety,
     ...options.toolInstructions,
     '',
@@ -98,6 +118,7 @@ async function makePrimeAgent(context: PrimeContext) {
     name: 'Prime',
     instructions: buildPrimeInstructions({
       role: context.role,
+      ageGroup: context.ageGroup,
       toolInstructions,
       contextBlock,
     }),
@@ -118,6 +139,7 @@ export async function runPrime(input: string, opts: PrimeRunOptions = {}) {
     scopeId,
     channel: opts.channel,
     role,
+    ageGroup: opts.ageGroup,
     scopeType,
   };
 
@@ -132,7 +154,11 @@ export async function runPrime(input: string, opts: PrimeRunOptions = {}) {
   });
 
   const outputText = typeof result.finalOutput === 'string' ? result.finalOutput : '';
-  const filtered = filterResponse(outputText, context.role ?? 'parent');
+  const filtered = filterResponse(
+    outputText,
+    context.role ?? 'parent',
+    context.ageGroup ?? 'child',
+  );
 
   return {
     finalOutput: filtered.filtered,

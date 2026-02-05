@@ -357,11 +357,20 @@ export function createStatusHandler(context: StatusContext): StatusHandler {
         }
 
         const family = await loadFamilyConfig({ haloHome: context.haloHome.root });
-        const isChildScope = family.members.some(
-          (member) => member.role === 'child' && scopeId === `telegram:dm:${member.memberId}`,
+        const member = family.members.find(
+          (entry) => scopeId === `telegram:dm:${entry.memberId}`,
         );
 
-        if (!isChildScope) {
+        if (!member || member.role !== 'child') {
+          sendJson(403, { error: 'forbidden' });
+          return;
+        }
+
+        const ageGroup = member.ageGroup ?? 'child';
+        const allowTranscript =
+          ageGroup === 'child' ? true : Boolean(member.parentalVisibility);
+
+        if (!allowTranscript) {
           sendJson(403, { error: 'forbidden' });
           return;
         }

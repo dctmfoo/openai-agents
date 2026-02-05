@@ -49,6 +49,7 @@ describe('telegram adapter', () => {
         memberId: 'kid',
         displayName: 'Kid',
         role: 'child',
+        ageGroup: 'child',
         telegramUserIds: [999],
       },
     ],
@@ -93,6 +94,7 @@ describe('telegram adapter', () => {
       scopeId: 'telegram:dm:wags',
       rootDir: '/root',
       role: 'parent',
+      ageGroup: undefined,
       scopeType: 'dm',
     });
     expect(appendDailyNote).toHaveBeenCalledWith({ rootDir: '/root', scopeId: 'telegram:dm:wags' }, '[user] hello');

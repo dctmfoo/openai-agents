@@ -21,10 +21,30 @@ describe('toolPolicy', () => {
   });
 
   it('denies web search for child dm but allows memory tools', () => {
-    const decision = resolveToolPolicy({ role: 'child', scopeType: 'dm' });
+    const decision = resolveToolPolicy({ role: 'child', scopeType: 'dm', ageGroup: 'child' });
 
     expect(decision.allowedToolNames.has(TOOL_NAMES.readScopedMemory)).toBe(true);
     expect(decision.allowedToolNames.has(TOOL_NAMES.rememberDaily)).toBe(true);
     expect(decision.allowedToolNames.has(TOOL_NAMES.webSearch)).toBe(false);
+  });
+
+  it('allows web search for teen dm', () => {
+    const decision = resolveToolPolicy({ role: 'child', scopeType: 'dm', ageGroup: 'teen' });
+
+    expect(decision.allowedToolNames.has(TOOL_NAMES.readScopedMemory)).toBe(true);
+    expect(decision.allowedToolNames.has(TOOL_NAMES.rememberDaily)).toBe(true);
+    expect(decision.allowedToolNames.has(TOOL_NAMES.webSearch)).toBe(true);
+  });
+
+  it('allows web search for young adult dm', () => {
+    const decision = resolveToolPolicy({
+      role: 'child',
+      scopeType: 'dm',
+      ageGroup: 'young_adult',
+    });
+
+    expect(decision.allowedToolNames.has(TOOL_NAMES.readScopedMemory)).toBe(true);
+    expect(decision.allowedToolNames.has(TOOL_NAMES.rememberDaily)).toBe(true);
+    expect(decision.allowedToolNames.has(TOOL_NAMES.webSearch)).toBe(true);
   });
 });

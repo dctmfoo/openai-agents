@@ -13,7 +13,11 @@ const TOOL_REGISTRY: Record<ToolName, Tool<PrimeContext>> = {
 };
 
 export function buildPrimeTools(context: PrimeContext): Tool<PrimeContext>[] {
-  const policy = resolveToolPolicy({ role: context.role, scopeType: context.scopeType });
+  const policy = resolveToolPolicy({
+    role: context.role,
+    ageGroup: context.ageGroup,
+    scopeType: context.scopeType,
+  });
   const allowed = policy.allowedToolNames;
 
   return Object.entries(TOOL_REGISTRY)
