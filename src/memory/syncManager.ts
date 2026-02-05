@@ -114,7 +114,7 @@ export class SyncManager {
 
   private async indexFile(path: string, contents: string) {
     const chunks = chunkMarkdown({ path, text: contents });
-    const embeddings: number[][] = [];
+    const embeddings: (number[] | null)[] = new Array(chunks.length).fill(null);
     const toEmbed: string[] = [];
     const indicesToFill: number[] = [];
 
@@ -151,6 +151,12 @@ export class SyncManager {
 
     const oldChunks = this.options.vectorStore.getActiveChunksForPath(path);
 
+    // Verify all embeddings are populated (no null holes)
+    const verified = embeddings.map((e, idx) => {
+      if (!e) throw new Error(`Missing embedding at index ${idx} after indexing`);
+      return e;
+    });
+
     const inserts = chunks.map((chunk, idx) => ({
       chunkId: chunk.id,
       path: chunk.path,
@@ -159,7 +165,7 @@ export class SyncManager {
       content: chunk.text,
       contentHash: sha256(chunk.text),
       tokenCount: chunk.tokenEstimate,
-      embedding: embeddings[idx],
+      embedding: verified[idx],
     }));
 
     inserts.forEach((entry) => {
@@ -174,7 +180,7 @@ export class SyncManager {
       let best: { idx: number; score: number } | null = null;
       for (let index = 0; index < newChunkIdxs.length; index++) {
         const newIdx = newChunkIdxs[index];
-        const similarity = cosineSimilarity(oldChunk.embedding, embeddings[index]);
+        const similarity = cosineSimilarity(oldChunk.embedding, verified[index]);
         if (!best || similarity > best.score) {
           best = { idx: newIdx, score: similarity };
         }

@@ -56,14 +56,18 @@ const parseUnits = (text: string): Unit[] => {
       const startLine = i + 1;
       const buffer: string[] = [line];
       i += 1;
+      let fenceClosed = false;
       while (i < lines.length) {
         buffer.push(lines[i]);
         if (lines[i].trim().startsWith('```')) {
+          fenceClosed = true;
           i += 1;
           break;
         }
         i += 1;
       }
+      // Safety: unclosed code fences are still chunked (best-effort for malformed markdown)
+      void fenceClosed;
       const textBlock = buffer.join('\n');
       units.push({
         text: textBlock,

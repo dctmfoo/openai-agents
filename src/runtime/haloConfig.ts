@@ -123,11 +123,21 @@ export async function loadHaloConfig(env: NodeJS.ProcessEnv): Promise<HaloConfig
   const host = env.GATEWAY_HOST;
   const portRaw = env.GATEWAY_PORT;
 
+  // Resolve vecExtensionPath: config > env > auto-detect
+  const resolvedVecPath =
+    res.data.semanticMemory.vecExtensionPath ??
+    env.SQLITE_VEC_EXT ??
+    undefined;
+
   return {
     ...res.data,
     gateway: {
       host: host ?? res.data.gateway.host,
       port: portRaw ? Number.parseInt(portRaw, 10) : res.data.gateway.port,
+    },
+    semanticMemory: {
+      ...res.data.semanticMemory,
+      vecExtensionPath: resolvedVecPath,
     },
   };
 }
