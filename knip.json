@@ -4,7 +4,10 @@
     "src/interfaces/telegram/start.ts",
     "src/interfaces/cli/run.ts",
     "src/gateway/start.ts",
-    "src/dev/todoCheck.ts"
+    "src/dev/todoCheck.ts",
+    "src/dev/configInit.ts",
+    "src/dev/configValidate.ts",
+    "src/dev/doctor.ts"
   ],
   "project": [
     "src/**/*.ts",
@@ -12,5 +15,7 @@
     "!node_modules/**",
     "!apps/admin/src-tauri/target/**"
   ],
-  "tags": ["-lintignore"]
+  "tags": [
+    "-lintignore"
+  ]
 }

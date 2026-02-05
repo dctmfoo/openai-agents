@@ -1,4 +1,5 @@
 import process from 'node:process';
+import path from 'node:path';
 import { Bot } from 'grammy';
 import { runPrime } from '../../prime/prime.js';
 import { appendScopedDailyNote } from '../../memory/scopedMemory.js';
@@ -48,9 +49,9 @@ export const UNKNOWN_DM_REPLY =
 export function createTelegramAdapter(options: TelegramAdapterOptions): TelegramAdapter {
   const {
     token,
-    logDir = 'logs',
-    rootDir = process.cwd(),
     haloHome = getHaloHome(process.env),
+    logDir = path.join(haloHome, 'logs'),
+    rootDir = haloHome,
     bot: providedBot,
     now = () => new Date(),
     deps = {},

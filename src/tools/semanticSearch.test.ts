@@ -6,7 +6,7 @@ import path from 'node:path';
 import { semanticSearch } from './semanticSearchTool.js';
 
 describe('semanticSearch', () => {
-  it('returns empty results when semantic memory is disabled', async () => {
+  it('returns an error when semantic memory is disabled', async () => {
     const haloHome = await mkdtemp(path.join(tmpdir(), 'halo-semantic-'));
     await mkdir(path.join(haloHome, 'config'), { recursive: true });
     await writeFile(
@@ -69,6 +69,7 @@ describe('semanticSearch', () => {
       },
     );
 
-    expect(result).toEqual([]);
+    expect(result.results).toEqual([]);
+    expect(result.error?.code).toBe('semantic_memory_disabled');
   });
 });

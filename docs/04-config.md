@@ -1,6 +1,6 @@
 # Configuration
 
-This project currently uses **two** JSON files.
+This project uses **two** JSON files.
 
 - `HALO_HOME/config.json` (gateway runtime settings, required for `pnpm start:gateway`)
 - `HALO_HOME/config/family.json` (Telegram policy + `/policy/status`)
@@ -11,6 +11,14 @@ Examples:
 
 ## Bootstrap
 
+Recommended:
+
+```bash
+pnpm halo:config:init
+```
+
+Manual:
+
 ```bash
 cp config/halo.example.json ~/.halo/config.json
 mkdir -p ~/.halo/config
@@ -20,8 +28,7 @@ cp config/family.example.json ~/.halo/config/family.json
 
 Notes:
 - `TELEGRAM_BOT_TOKEN` stays in the environment (don't put secrets in config.json).
-- Gateway host/port can be overridden via `GATEWAY_HOST` and `GATEWAY_PORT` env vars.
-- Both files share the same `family` schema; `config.json` includes a `family` block but the bot still reads `config/family.json` today. Keep them in sync.
+- `config.json` no longer embeds `family`; family policy lives only in `config/family.json`.
 
 ## Principles
 
@@ -30,8 +37,6 @@ Notes:
 - Version configs with `schemaVersion`.
 
 ## config.json structure
-
-The unified config includes:
 
 ```json
 {
@@ -46,9 +51,27 @@ The unified config includes:
   },
   "memory": {
     "distillationEveryNItems": 20,
-    "distillationMaxItems": 200
+    "distillationMaxItems": 200,
+    "distillationMode": "deterministic"
   },
-  "family": { ... }
+  "childSafe": {
+    "enabled": true,
+    "maxMessageLength": 800,
+    "blockedTopics": []
+  },
+  "semanticMemory": {
+    "enabled": true,
+    "embeddingProvider": "openai",
+    "embeddingModel": "text-embedding-3-small",
+    "embeddingDimensions": 1536,
+    "syncIntervalMinutes": 15,
+    "search": {
+      "fusionMethod": "rrf",
+      "vectorWeight": 0.7,
+      "textWeight": 0.3,
+      "minScore": 0.005
+    }
+  }
 }
 ```
 
@@ -60,7 +83,7 @@ The unified config includes:
 ### features
 
 - `compactionEnabled`: enable OpenAI Responses API compaction (default `false` in config file)
-- `distillationEnabled`: enable deterministic memory distillation (default `false`)
+- `distillationEnabled`: enable memory distillation (default `false`)
 
 Notes:
 - When running via the gateway (`pnpm start:gateway`), the config file values are used.
@@ -71,10 +94,32 @@ Notes:
 
 - `distillationEveryNItems`: trigger distillation after N transcript items (default `20`)
 - `distillationMaxItems`: max items to consider when distilling (default `200`)
+- `distillationMode`: `deterministic` or `llm`
 
-### family
+### childSafe
 
-Defines family members and the parents-only group (schema used by both `config.json` and `config/family.json`).
+- `enabled`: apply child-safe response filtering
+- `maxMessageLength`: cap child responses (characters)
+- `blockedTopics`: additional blocked topics (strings)
+
+### semanticMemory
+
+- `enabled`: toggle semantic memory indexing + search
+- `embeddingProvider`: `openai` or `gemini`
+- `embeddingModel`: provider model name
+- `embeddingDimensions`: embedding size
+- `vecExtensionPath`: optional override for sqlite-vec extension path
+- `syncIntervalMinutes`: how often to sync markdown -> vector store
+- `search`: scoring weights and minimum relevance
+
+Requirements:
+- `SQLITE_VEC_EXT` (or `vecExtensionPath`) must point to the sqlite-vec extension.
+- `OPENAI_API_KEY` is required for OpenAI embeddings.
+- `GEMINI_API_KEY` is required for Gemini embeddings.
+
+## family.json structure
+
+Defines family members and the parents-only group.
 
 Fields:
 - `schemaVersion`: number
@@ -83,8 +128,20 @@ Fields:
   - `memberId`: stable identifier (e.g. `wags`)
   - `displayName`: human-readable name
   - `role`: `parent` | `child`
+  - `ageGroup`: required for children (`child` | `teen` | `young_adult`)
+  - `parentalVisibility`: optional, allow parents to see child transcripts
   - `telegramUserIds`: array of Telegram user IDs for this member
 - `parentsGroup.telegramChatId`: optional, approved group chat id (Telegram group IDs can be **negative**)
+
+## Environment overrides
+
+- `HALO_HOME`: runtime root (default `~/.halo`)
+- `GATEWAY_HOST`: override `gateway.host`
+- `GATEWAY_PORT`: override `gateway.port`
+- `LOG_DIR`: override the log directory for gateway and telegram runs
+- `SQLITE_VEC_EXT`: sqlite-vec extension path for semantic memory
+- `HALO_COMPACTION_ENABLED`: toggle compaction defaults in CLI/dev
+- `HALO_DISTILLATION_ENABLED`: toggle distillation defaults in CLI/dev
 
 ## nodes.json (future)
 

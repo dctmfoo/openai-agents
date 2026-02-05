@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 export type MemoryPaths = {
-  rootDir: string; // repo root
+  rootDir: string; // runtime root (HALO_HOME)
 };
 
 function isoDate(d = new Date()) {
