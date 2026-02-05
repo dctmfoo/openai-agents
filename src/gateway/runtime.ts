@@ -25,6 +25,11 @@ export type GatewayOptions = {
       distillationMaxItems?: number;
       distillationMode?: 'deterministic' | 'llm';
     };
+    childSafe?: {
+      enabled?: boolean;
+      maxMessageLength?: number;
+      blockedTopics?: string[];
+    };
   };
 };
 

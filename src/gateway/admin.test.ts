@@ -68,7 +68,16 @@ const writeFamilyConfig = async (rootDir: string) => {
         memberId: 'child-1',
         displayName: 'Kid',
         role: 'child',
+        ageGroup: 'child',
         telegramUserIds: [222],
+      },
+      {
+        memberId: 'teen-1',
+        displayName: 'Teen',
+        role: 'child',
+        ageGroup: 'teen',
+        parentalVisibility: true,
+        telegramUserIds: [333],
       },
     ],
     parentsGroup: { telegramChatId: 999 },
@@ -456,6 +465,14 @@ describe('gateway status handler', () => {
         displayName: 'Kid',
       },
       {
+        scopeId: 'telegram:dm:teen-1',
+        scopeType: 'dm',
+        allow: true,
+        memberId: 'teen-1',
+        role: 'child',
+        displayName: 'Teen',
+      },
+      {
         scopeId: 'telegram:parents_group:999',
         scopeType: 'parents_group',
         allow: true,
@@ -471,6 +488,15 @@ describe('gateway status handler', () => {
         memberId: 'child-1',
         role: 'child',
         displayName: 'Kid',
+      },
+      {
+        scopeId: 'telegram:parents_group:999',
+        scopeType: 'parents_group',
+        allow: false,
+        reason: 'child_in_parents_group',
+        memberId: 'teen-1',
+        role: 'child',
+        displayName: 'Teen',
       },
     ]);
   });
@@ -535,6 +561,153 @@ describe('gateway status handler', () => {
         method: 'GET',
         url: '/transcripts/tail?scopeId=scope-1&lines=1',
         socket: { remoteAddress: '10.0.0.1' },
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body)).toEqual({ error: 'forbidden' });
+  });
+
+  it('allows parents to read a child transcript', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    await writeFamilyConfig(haloHome);
+    const store = await makeSessionStore(haloHome);
+    const session = store.getOrCreate('telegram:dm:child-1');
+
+    await session.addItems([userMessage('hi there')]);
+
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'GET',
+        url: '/sessions/telegram%3Adm%3Achild-1/transcript?role=parent',
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(200);
+    const payload = JSON.parse(res.body) as unknown[];
+    expect(payload.length).toBe(1);
+    expect(payload[0]).toMatchObject({ role: 'user' });
+  });
+
+  it('rejects transcript reads when requester is not a parent', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    await writeFamilyConfig(haloHome);
+    const store = await makeSessionStore(haloHome);
+    const session = store.getOrCreate('telegram:dm:child-1');
+
+    await session.addItems([userMessage('hi there')]);
+
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'GET',
+        url: '/sessions/telegram%3Adm%3Achild-1/transcript?role=child',
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body)).toEqual({ error: 'forbidden' });
+  });
+
+  it('allows parents to read teen transcript when opted in', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    await writeFamilyConfig(haloHome);
+    const store = await makeSessionStore(haloHome);
+    const session = store.getOrCreate('telegram:dm:teen-1');
+
+    await session.addItems([userMessage('hi from teen')]);
+
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'GET',
+        url: '/sessions/telegram%3Adm%3Ateen-1/transcript?role=parent',
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(200);
+    const payload = JSON.parse(res.body) as unknown[];
+    expect(payload.length).toBe(1);
+    expect(payload[0]).toMatchObject({ role: 'user' });
+  });
+
+  it('rejects teen transcript when not opted in', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    const configDir = path.join(haloHome, 'config');
+    await mkdir(configDir, { recursive: true });
+    const payload = {
+      schemaVersion: 1,
+      familyId: 'test-family',
+      members: [
+        {
+          memberId: 'parent-1',
+          displayName: 'Pat',
+          role: 'parent',
+          telegramUserIds: [111],
+        },
+        {
+          memberId: 'teen-2',
+          displayName: 'Teen',
+          role: 'child',
+          ageGroup: 'teen',
+          parentalVisibility: false,
+          telegramUserIds: [444],
+        },
+      ],
+      parentsGroup: { telegramChatId: 999 },
+    };
+    await writeFile(path.join(configDir, 'family.json'), JSON.stringify(payload), 'utf8');
+
+    const store = await makeSessionStore(haloHome);
+    const session = store.getOrCreate('telegram:dm:teen-2');
+    await session.addItems([userMessage('hi from teen')]);
+
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'GET',
+        url: '/sessions/telegram%3Adm%3Ateen-2/transcript?role=parent',
       },
       res,
     );

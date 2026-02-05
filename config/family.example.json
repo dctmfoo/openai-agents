@@ -7,6 +7,21 @@
       "displayName": "Wags",
       "role": "parent",
       "telegramUserIds": [889348242]
+    },
+    {
+      "memberId": "kairav",
+      "displayName": "Kairav",
+      "role": "child",
+      "ageGroup": "child",
+      "telegramUserIds": [111111111]
+    },
+    {
+      "memberId": "manasa",
+      "displayName": "Manasa",
+      "role": "child",
+      "ageGroup": "young_adult",
+      "parentalVisibility": false,
+      "telegramUserIds": [222222222]
     }
   ],
   "parentsGroup": {

@@ -33,6 +33,13 @@ describe('familyConfig', () => {
           role: 'parent',
           telegramUserIds: [889348242],
         },
+        {
+          memberId: 'kid',
+          displayName: 'Kid',
+          role: 'child',
+          ageGroup: 'child',
+          telegramUserIds: [12345],
+        },
       ],
       parentsGroup: {
         telegramChatId: null,
@@ -84,5 +91,32 @@ describe('familyConfig', () => {
     const message = (error as Error).message;
     expect(message).toContain('family.json');
     expect(message).toContain('telegramUserIds');
+  });
+
+  it('requires ageGroup for child members', async () => {
+    const haloHome = await mkdtemp(join(tmpdir(), 'halo-config-'));
+    const configDir = join(haloHome, 'config');
+    await mkdir(configDir, { recursive: true });
+
+    const config = {
+      schemaVersion: 1,
+      familyId: 'default',
+      members: [
+        {
+          memberId: 'kid',
+          displayName: 'Kid',
+          role: 'child',
+          telegramUserIds: [101],
+        },
+      ],
+    };
+
+    await writeFile(
+      join(configDir, 'family.json'),
+      JSON.stringify(config, null, 2),
+      'utf8',
+    );
+
+    await expect(loadFamilyConfig({ haloHome })).rejects.toThrow('ageGroup');
   });
 });

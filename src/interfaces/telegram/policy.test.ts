@@ -16,6 +16,7 @@ const baseFamily = {
       memberId: 'kid',
       displayName: 'Kid',
       role: 'child' as const,
+      ageGroup: 'child' as const,
       telegramUserIds: [999],
     },
   ],
@@ -46,6 +47,19 @@ describe('telegram policy', () => {
     expect(decision.allow).toBe(true);
     expect(decision.scopeType).toBe('dm');
     expect(decision.scopeId).toBe('telegram:dm:wags');
+  });
+
+  it('includes age group for child dms', () => {
+    const decision = resolveTelegramPolicy({
+      chat: { id: 999, type: 'private' },
+      fromId: 999,
+      family: baseFamily,
+    });
+
+    expect(decision.allow).toBe(true);
+    expect(decision.scopeType).toBe('dm');
+    expect(decision.scopeId).toBe('telegram:dm:kid');
+    expect(decision.ageGroup).toBe('child');
   });
 
   it('denies unapproved groups', () => {

@@ -37,6 +37,11 @@ type GatewayStatus = {
       distillationMaxItems?: number;
       distillationMode?: 'deterministic' | 'llm';
     };
+    childSafe?: {
+      enabled?: boolean;
+      maxMessageLength?: number;
+      blockedTopics?: string[];
+    };
   };
 };
 
@@ -155,6 +160,25 @@ const readTail = async (path: string, lines: number) => {
       .filter(Boolean);
     const tail = entries.length > lines ? entries.slice(-lines) : entries;
     return tail.map(parseJsonLine);
+  } catch (err) {
+    if (err && typeof err === 'object' && 'code' in err) {
+      const { code } = err as { code?: string };
+      if (code === 'ENOENT') {
+        return [];
+      }
+    }
+    throw err;
+  }
+};
+
+const readTranscript = async (path: string) => {
+  try {
+    const raw = await readFile(path, 'utf8');
+    const entries = raw
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    return entries.map(parseJsonLine);
   } catch (err) {
     if (err && typeof err === 'object' && 'code' in err) {
       const { code } = err as { code?: string };
@@ -306,6 +330,57 @@ export function createStatusHandler(context: StatusContext): StatusHandler {
           `${hashSessionId(scopeId)}.jsonl`,
         );
         const payload = await readTail(transcriptPath, lines);
+        sendJson(200, payload);
+        return;
+      }
+
+      if (req.method === 'GET' && path.startsWith('/sessions/') && path.endsWith('/transcript')) {
+        const rawScopeId = path.slice('/sessions/'.length, -'/transcript'.length);
+        if (!rawScopeId) {
+          sendJson(404, { error: 'not_found' });
+          return;
+        }
+
+        let scopeId: string;
+        try {
+          scopeId = decodeURIComponent(rawScopeId);
+        } catch {
+          sendJson(400, { error: 'invalid_scope_id' });
+          return;
+        }
+
+        const url = new URL(req.url ?? '', 'http://localhost');
+        const role = url.searchParams.get('role')?.trim();
+        if (role !== 'parent') {
+          sendJson(403, { error: 'forbidden' });
+          return;
+        }
+
+        const family = await loadFamilyConfig({ haloHome: context.haloHome.root });
+        const member = family.members.find(
+          (entry) => scopeId === `telegram:dm:${entry.memberId}`,
+        );
+
+        if (!member || member.role !== 'child') {
+          sendJson(403, { error: 'forbidden' });
+          return;
+        }
+
+        const ageGroup = member.ageGroup ?? 'child';
+        const allowTranscript =
+          ageGroup === 'child' ? true : Boolean(member.parentalVisibility);
+
+        if (!allowTranscript) {
+          sendJson(403, { error: 'forbidden' });
+          return;
+        }
+
+        const transcriptPath = join(
+          context.haloHome.root,
+          'transcripts',
+          `${hashSessionId(scopeId)}.jsonl`,
+        );
+        const payload = await readTranscript(transcriptPath);
         sendJson(200, payload);
         return;
       }

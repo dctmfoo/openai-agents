@@ -57,5 +57,6 @@ await startGateway({
     gateway: haloConfig.gateway,
     features: haloConfig.features,
     memory: haloConfig.memory,
+    childSafe: haloConfig.childSafe,
   },
 });

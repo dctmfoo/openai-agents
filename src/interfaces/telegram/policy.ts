@@ -18,6 +18,7 @@ export type TelegramPolicyDecision = {
   scopeType?: 'dm' | 'parents_group';
   memberId?: string;
   role?: 'parent' | 'child';
+  ageGroup?: 'child' | 'teen' | 'young_adult';
 };
 
 const normalizeTelegramId = (value?: number | string): number | null => {
@@ -50,6 +51,7 @@ export function resolveTelegramPolicy(input: TelegramPolicyInput): TelegramPolic
       scopeId: `telegram:dm:${member.memberId}`,
       memberId: member.memberId,
       role: member.role,
+      ageGroup: member.ageGroup,
     };
   }
 
@@ -68,5 +70,6 @@ export function resolveTelegramPolicy(input: TelegramPolicyInput): TelegramPolic
     scopeId: `telegram:parents_group:${approvedGroupId}`,
     memberId: member.memberId,
     role: member.role,
+    ageGroup: member.ageGroup,
   };
 }

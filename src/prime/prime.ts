@@ -4,6 +4,7 @@ import { loadScopedContextFiles } from '../memory/scopedMemory.js';
 import { defaultSessionStore, type SessionStore } from '../sessions/sessionStore.js';
 import { buildPrimeTools } from '../tools/registry.js';
 import { TOOL_NAMES } from '../tools/toolNames.js';
+import { filterResponse } from '../policies/contentFilter.js';
 import type { PrimeContext } from './types.js';
 
 export type PrimeRunOptions = {
@@ -17,6 +18,7 @@ export type PrimeRunOptions = {
   sessionStore?: SessionStore;
   channel?: 'telegram' | 'cli';
   role?: 'parent' | 'child';
+  ageGroup?: 'child' | 'teen' | 'young_adult';
   scopeType?: 'dm' | 'parents_group';
 };
 
@@ -44,6 +46,52 @@ const buildToolInstructions = (toolNames: string[]) => {
   return instructions;
 };
 
+type PrimeInstructionOptions = {
+  role?: 'parent' | 'child';
+  ageGroup?: 'child' | 'teen' | 'young_adult';
+  toolInstructions: string[];
+  contextBlock: string;
+};
+
+export function buildPrimeInstructions(options: PrimeInstructionOptions): string {
+  const childSafety =
+    options.role === 'child'
+      ? [
+          "Never share information from other family members' private conversations.",
+          'If asked about adult topics, gently redirect to age-appropriate alternatives.',
+        ]
+      : [];
+
+  const tierInstructions =
+    options.role === 'child'
+      ? options.ageGroup === 'teen'
+        ? [
+            'Use age-appropriate language and be study-focused.',
+            'Encourage critical thinking and safe curiosity.',
+          ]
+        : options.ageGroup === 'young_adult'
+          ? [
+              'Be a respectful study partner with a near-adult tone.',
+              'Offer structured help for exams and long-form learning.',
+            ]
+          : [
+              'Use simple vocabulary with short sentences.',
+              'Keep the tone encouraging, educational, and fun.',
+            ]
+      : [];
+
+  return [
+    'You are Prime, a personal AI companion.',
+    'Be helpful, direct, and concise.',
+    'Do not claim you performed actions you did not do.',
+    ...tierInstructions,
+    ...childSafety,
+    ...options.toolInstructions,
+    '',
+    options.contextBlock,
+  ].join('\n');
+}
+
 async function makePrimeAgent(context: PrimeContext) {
   const ctx = await loadScopedContextFiles({
     rootDir: context.rootDir,
@@ -68,14 +116,12 @@ async function makePrimeAgent(context: PrimeContext) {
 
   return new Agent({
     name: 'Prime',
-    instructions: [
-      'You are Prime, a personal AI companion.',
-      'Be helpful, direct, and concise.',
-      'Do not claim you performed actions you did not do.',
-      ...toolInstructions,
-      '',
+    instructions: buildPrimeInstructions({
+      role: context.role,
+      ageGroup: context.ageGroup,
+      toolInstructions,
       contextBlock,
-    ].join('\n'),
+    }),
     tools,
   });
 }
@@ -93,6 +139,7 @@ export async function runPrime(input: string, opts: PrimeRunOptions = {}) {
     scopeId,
     channel: opts.channel,
     role,
+    ageGroup: opts.ageGroup,
     scopeType,
   };
 
@@ -106,8 +153,15 @@ export async function runPrime(input: string, opts: PrimeRunOptions = {}) {
     context,
   });
 
+  const outputText = typeof result.finalOutput === 'string' ? result.finalOutput : '';
+  const filtered = filterResponse(
+    outputText,
+    context.role ?? 'parent',
+    context.ageGroup ?? 'child',
+  );
+
   return {
-    finalOutput: result.finalOutput,
+    finalOutput: filtered.filtered,
     raw: result,
   };
 }

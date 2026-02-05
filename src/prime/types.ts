@@ -4,4 +4,5 @@ export type PrimeContext = ToolPolicyContext & {
   rootDir: string;
   scopeId: string;
   channel?: 'telegram' | 'cli';
+  ageGroup?: 'child' | 'teen' | 'young_adult';
 };

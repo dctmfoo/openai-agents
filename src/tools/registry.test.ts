@@ -27,6 +27,7 @@ describe('prime tool registry', () => {
       rootDir: '/root',
       scopeId: 'telegram:dm:kid',
       role: 'child',
+      ageGroup: 'child',
       scopeType: 'dm',
       channel: 'telegram',
     };
