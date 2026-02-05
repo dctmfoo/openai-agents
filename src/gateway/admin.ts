@@ -5,6 +5,8 @@ import { loadFamilyConfig } from '../runtime/familyConfig.js';
 import { hashSessionId } from '../sessions/sessionHash.js';
 import type { SessionStore } from '../sessions/sessionStore.js';
 import { runDistillation } from '../memory/distillationRunner.js';
+import { SemanticMemory, type SemanticMemoryConfig } from '../memory/semanticMemory.js';
+import { loadHaloConfig } from '../runtime/haloConfig.js';
 
 export type HaloHomePaths = {
   root: string;
@@ -41,6 +43,20 @@ type GatewayStatus = {
       enabled?: boolean;
       maxMessageLength?: number;
       blockedTopics?: string[];
+    };
+    semanticMemory?: {
+      enabled?: boolean;
+      embeddingProvider?: 'openai' | 'gemini';
+      embeddingModel?: string;
+      embeddingDimensions?: number;
+      vecExtensionPath?: string;
+      syncIntervalMinutes?: number;
+      search?: {
+        fusionMethod?: 'rrf';
+        vectorWeight?: number;
+        textWeight?: number;
+        minScore?: number;
+      };
     };
   };
 };
@@ -441,6 +457,44 @@ export function createStatusHandler(context: StatusContext): StatusHandler {
           durableFacts: result.durableFacts,
           temporalNotes: result.temporalNotes,
         });
+        return;
+      }
+
+      if (req.method === 'POST' && path.startsWith('/sessions/') && path.endsWith('/semantic-sync')) {
+        const rawScopeId = path.slice('/sessions/'.length, -'/semantic-sync'.length);
+        if (!rawScopeId) {
+          sendJson(400, { error: 'missing_scope_id' });
+          return;
+        }
+
+        let scopeId: string;
+        try {
+          scopeId = decodeURIComponent(rawScopeId);
+        } catch {
+          sendJson(400, { error: 'invalid_scope_id' });
+          return;
+        }
+
+        const semanticConfig = context.config?.semanticMemory;
+        if (!semanticConfig?.enabled) {
+          sendJson(409, { error: 'semantic_memory_disabled' });
+          return;
+        }
+
+        try {
+          const memory = new SemanticMemory({
+            rootDir: context.haloHome.root,
+            scopeId,
+            semanticConfig: semanticConfig as SemanticMemoryConfig,
+          });
+          await memory.sync(semanticConfig as SemanticMemoryConfig);
+          sendJson(200, { ok: true, scopeId });
+        } catch (err) {
+          sendJson(500, {
+            error: 'sync_failed',
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
         return;
       }
 

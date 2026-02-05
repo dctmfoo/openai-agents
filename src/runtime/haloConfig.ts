@@ -49,6 +49,42 @@ const HALO_CONFIG_SCHEMA = z.object({
       blockedTopics: [],
     }),
 
+  semanticMemory: z
+    .object({
+      enabled: z.boolean().default(true),
+      embeddingProvider: z.enum(['openai', 'gemini']).default('openai'),
+      embeddingModel: z.string().default('text-embedding-3-small'),
+      embeddingDimensions: z.number().int().positive().default(1536),
+      vecExtensionPath: z.string().optional(),
+      syncIntervalMinutes: z.number().int().positive().default(15),
+      search: z
+        .object({
+          fusionMethod: z.literal('rrf').default('rrf'),
+          vectorWeight: z.number().min(0).max(1).default(0.7),
+          textWeight: z.number().min(0).max(1).default(0.3),
+          minScore: z.number().min(0).default(0.005),
+        })
+        .default({
+          fusionMethod: 'rrf',
+          vectorWeight: 0.7,
+          textWeight: 0.3,
+          minScore: 0.005,
+        }),
+    })
+    .default({
+      enabled: true,
+      embeddingProvider: 'openai',
+      embeddingModel: 'text-embedding-3-small',
+      embeddingDimensions: 1536,
+      syncIntervalMinutes: 15,
+      search: {
+        fusionMethod: 'rrf',
+        vectorWeight: 0.7,
+        textWeight: 0.3,
+        minScore: 0.005,
+      },
+    }),
+
   family: FAMILY_CONFIG_SCHEMA,
 });
 
@@ -87,11 +123,21 @@ export async function loadHaloConfig(env: NodeJS.ProcessEnv): Promise<HaloConfig
   const host = env.GATEWAY_HOST;
   const portRaw = env.GATEWAY_PORT;
 
+  // Resolve vecExtensionPath: config > env > auto-detect
+  const resolvedVecPath =
+    res.data.semanticMemory.vecExtensionPath ??
+    env.SQLITE_VEC_EXT ??
+    undefined;
+
   return {
     ...res.data,
     gateway: {
       host: host ?? res.data.gateway.host,
       port: portRaw ? Number.parseInt(portRaw, 10) : res.data.gateway.port,
+    },
+    semanticMemory: {
+      ...res.data.semanticMemory,
+      vecExtensionPath: resolvedVecPath,
     },
   };
 }

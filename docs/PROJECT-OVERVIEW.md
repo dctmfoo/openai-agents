@@ -44,6 +44,7 @@ A **family-first AI companion** called "Prime" (codename "Halo") built with the 
 - **Durable facts** → `MEMORY.md` (preferences, relationships)
 - **Temporal notes** → `YYYY-MM-DD.md` (daily log)
 - **Context loading** — SOUL.md + USER.md + scoped memory into Prime
+- **Semantic memory layer** — sqlite-vec + FTS5 hybrid search on top of markdown (per-scope index)
 
 ### ✅ Session Management
 - **FileBackedSession** — JSONL persistence

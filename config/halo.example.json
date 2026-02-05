@@ -18,6 +18,19 @@
     "maxMessageLength": 800,
     "blockedTopics": []
   },
+  "semanticMemory": {
+    "enabled": true,
+    "embeddingProvider": "openai",
+    "embeddingModel": "text-embedding-3-small",
+    "embeddingDimensions": 1536,
+    "syncIntervalMinutes": 15,
+    "search": {
+      "fusionMethod": "rrf",
+      "vectorWeight": 0.7,
+      "textWeight": 0.3,
+      "minScore": 0.005
+    }
+  },
   "family": {
     "schemaVersion": 1,
     "familyId": "default",

@@ -43,6 +43,12 @@ const buildToolInstructions = (toolNames: string[]) => {
     );
   }
 
+  if (toolNames.includes(TOOL_NAMES.semanticSearch)) {
+    instructions.push(
+      'To search scoped memory semantically, call semantic_search with a short query.',
+    );
+  }
+
   return instructions;
 };
 
