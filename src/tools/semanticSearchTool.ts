@@ -27,10 +27,15 @@ const requirePrimeContext = (runContext?: RunContext<PrimeContext>): PrimeContex
 };
 
 const loadSemanticConfig = async (rootDir: string): Promise<SemanticMemoryConfig | null> => {
-  const config = await loadHaloConfig({ ...process.env, HALO_HOME: rootDir } as NodeJS.ProcessEnv);
-  const semantic = (config as any).semanticMemory as SemanticMemoryConfig | undefined;
-  if (!semantic?.enabled) return null;
-  return semantic;
+  try {
+    const config = await loadHaloConfig({ ...process.env, HALO_HOME: rootDir } as NodeJS.ProcessEnv);
+    const semantic = (config as any).semanticMemory as SemanticMemoryConfig | undefined;
+    if (!semantic?.enabled) return null;
+    return semantic;
+  } catch {
+    // Config missing or invalid — treat semantic memory as disabled
+    return null;
+  }
 };
 
 export async function semanticSearch(

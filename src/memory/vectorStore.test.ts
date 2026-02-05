@@ -35,6 +35,6 @@ describe('vectorStore', () => {
   it('computes per-scope index path', () => {
     const path = getScopeIndexPath('/halo', 'telegram:dm:wags');
     expect(path).toContain('/halo/memory/scopes/');
-    expect(path).toContain('index.sqlite');
+    expect(path).toContain('semantic.db');
   });
 });

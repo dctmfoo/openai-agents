@@ -130,7 +130,19 @@ export class SyncManager {
     });
 
     if (toEmbed.length > 0) {
-      const embedded = await this.options.embedder(toEmbed);
+      let embedded: number[][];
+      try {
+        embedded = await this.options.embedder(toEmbed);
+      } catch (err) {
+        throw new Error(
+          `Embedding API failed for ${toEmbed.length} chunks: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      if (embedded.length !== toEmbed.length) {
+        throw new Error(
+          `Embedding API returned ${embedded.length} vectors for ${toEmbed.length} inputs`,
+        );
+      }
       embedded.forEach((vector, i) => {
         const chunkIdx = indicesToFill[i];
         embeddings[chunkIdx] = vector;

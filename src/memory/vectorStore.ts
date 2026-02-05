@@ -63,7 +63,7 @@ const SCHEMA_VERSION = 1;
 
 export function getScopeIndexPath(rootDir: string, scopeId: string): string {
   const hashed = hashSessionId(scopeId);
-  return join(rootDir, 'memory', 'scopes', hashed, 'index.sqlite');
+  return join(rootDir, 'memory', 'scopes', hashed, 'semantic.db');
 }
 
 export function buildSchemaStatements(dimensions: number): string[] {
