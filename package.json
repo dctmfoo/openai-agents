@@ -11,6 +11,8 @@
     "start:telegram": "node dist/interfaces/telegram/start.js",
     "start:gateway": "node dist/gateway/start.js",
     "start:cli": "node dist/interfaces/cli/run.js",
+    "halo:config:init": "tsx src/dev/configInit.ts",
+    "halo:config:validate": "tsx src/dev/configValidate.ts",
     "check:deadcode": "knip",
     "check:complexity": "eslint .",
     "check:dup": "jscpd --config jscpd.json",

@@ -223,7 +223,10 @@ pnpm test
 - [Architecture](03-architecture.md) — Technical deep-dive
 - [Configuration](04-config.md) — Config file reference
 - [Policies](05-policies.md) — Access control rules
+- [Onboarding](06-onboarding.md) — First-run guide
 - [Roadmap](08-roadmap.md) — Milestone tracking
+- [Tools](12-tools.md) — Tool registration guide
+- [Troubleshooting](11-troubleshooting.md) — Common fixes
 
 ---
 

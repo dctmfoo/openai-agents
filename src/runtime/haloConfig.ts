@@ -85,7 +85,7 @@ const HALO_CONFIG_SCHEMA = z.object({
       },
     }),
 
-  family: FAMILY_CONFIG_SCHEMA,
+  family: FAMILY_CONFIG_SCHEMA.optional(),
 });
 
 export type HaloConfig = z.infer<typeof HALO_CONFIG_SCHEMA>;
