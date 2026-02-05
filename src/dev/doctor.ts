@@ -36,7 +36,7 @@ const openAiKey = process.env.OPENAI_API_KEY?.trim();
 addResult(
   openAiKey ? 'OK' : 'FAIL',
   'env OPENAI_API_KEY',
-  openAiKey ? 'set' : 'missing (required for model calls)',
+  openAiKey ? 'set' : 'missing — set OPENAI_API_KEY in .env (required for model calls and embeddings)',
 );
 
 const telegramToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
