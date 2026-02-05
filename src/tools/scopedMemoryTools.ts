@@ -11,7 +11,7 @@ import { TOOL_NAMES } from './toolNames.js';
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 
-export type ScopedMemoryTarget = 'long_term' | 'today' | 'yesterday';
+type ScopedMemoryTarget = 'long_term' | 'today' | 'yesterday';
 
 export type ReadScopedMemoryResult = {
   target: ScopedMemoryTarget;
