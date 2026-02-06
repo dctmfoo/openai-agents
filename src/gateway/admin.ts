@@ -6,7 +6,7 @@ import { hashSessionId } from '../sessions/sessionHash.js';
 import type { SessionStore } from '../sessions/sessionStore.js';
 import { runDistillation } from '../memory/distillationRunner.js';
 import { SemanticMemory, type SemanticMemoryConfig } from '../memory/semanticMemory.js';
-import { loadHaloConfig } from '../runtime/haloConfig.js';
+import type { SemanticSyncStatusSnapshot } from '../memory/semanticSyncScheduler.js';
 
 export type HaloHomePaths = {
   root: string;
@@ -59,6 +59,7 @@ type GatewayStatus = {
       };
     };
   };
+  semanticSync?: SemanticSyncStatusSnapshot;
 };
 
 type PolicyScopeStatus = {
@@ -83,6 +84,7 @@ export type StatusContext = {
   haloHome: HaloHomePaths;
   sessionStore: SessionStore;
   config?: GatewayStatus['config'];
+  semanticSyncStatusProvider?: () => SemanticSyncStatusSnapshot;
   now?: () => number;
 };
 
@@ -213,6 +215,7 @@ export type AdminServerOptions = {
   version: string | null;
   sessionStore: SessionStore;
   config?: GatewayStatus['config'];
+  semanticSyncStatusProvider?: () => SemanticSyncStatusSnapshot;
   startedAtMs?: number;
   now?: () => number;
 };
@@ -260,6 +263,7 @@ function createStatusPayload(context: StatusContext): GatewayStatus {
       port: context.port,
     },
     config: context.config,
+    semanticSync: context.semanticSyncStatusProvider?.(),
   };
 }
 
@@ -546,6 +550,7 @@ export async function startAdminServer(options: AdminServerOptions): Promise<Adm
     haloHome: buildHaloHomePaths(options.haloHome),
     sessionStore: options.sessionStore,
     config: options.config,
+    semanticSyncStatusProvider: options.semanticSyncStatusProvider,
     now: options.now,
   };
 

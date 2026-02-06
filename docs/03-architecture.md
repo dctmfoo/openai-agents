@@ -127,7 +127,7 @@ Default gateway base is `http://127.0.0.1:8787` (override with `?gateway=` in th
 ### Public endpoints (any client)
 
 - `GET /healthz` — lightweight health check, returns `{ ok: true }`
-- `GET /status` — uptime, version, haloHome paths, config snapshot
+- `GET /status` — uptime, version, haloHome paths, config snapshot, semantic sync scheduler status
 - `GET /sessions` — scope id strings (legacy shape)
 - `GET /sessions-with-counts` — `{ scopeId, itemCount }` objects
 - `GET /policy/status` — per-scope allow/deny decisions (with reasons)

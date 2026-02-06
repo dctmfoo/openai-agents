@@ -26,6 +26,16 @@
           <button class="status__button" type="button" data-status-retry>Retry</button>
         </div>
       </div>
+      <div class="status" role="status" aria-live="polite" data-semantic-card>
+        <div class="status__header">
+          <div>
+            <div class="status__title" data-semantic-title>Semantic sync</div>
+            <div class="status__gateway" data-semantic-gateway>http://127.0.0.1:8787</div>
+          </div>
+          <div class="status__meta" data-semantic-meta>Checking...</div>
+        </div>
+        <pre class="status__payload" data-semantic-payload>Loading semantic sync status...</pre>
+      </div>
       <div class="status" role="status" aria-live="polite" data-sessions-card>
         <div class="status__header">
           <div>

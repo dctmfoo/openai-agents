@@ -38,7 +38,7 @@ Notes:
 - `members[].telegramUserIds` are **Telegram user IDs** (positive integers).
 - `parentsGroup.telegramChatId` is the **approved group chat id**. Telegram group IDs can be **negative**.
 
-## 2c) Configure gateway config.json (required for `pnpm start:gateway`)
+## 2c) Configure gateway config.json (required for `pnpm dev:telegram` and `pnpm start:gateway`)
 
 ```bash
 cp config/halo.example.json ~/.halo/config.json
@@ -70,6 +70,7 @@ pnpm start:gateway
 - Group chats are ignored unless the group matches `parentsGroup.telegramChatId` and the sender is in the family list.
 - Family config is loaded once at startup; restart to pick up changes.
 - `OPENAI_API_KEY` is required for real model calls (smoke tests stub the model).
+- Semantic memory background sync is built-in for active scopes when `semanticMemory.enabled=true`; cadence is `semanticMemory.syncIntervalMinutes`.
 
 Gateway admin exposes:
 

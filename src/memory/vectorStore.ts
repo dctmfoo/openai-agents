@@ -49,7 +49,7 @@ export type ChunkInsertInput = {
 type SqliteStatement = {
   get: (...params: any[]) => any;
   all: (...params: any[]) => any[];
-  run: (...params: any[]) => { lastInsertRowid?: number };
+  run: (...params: any[]) => { lastInsertRowid?: number; changes?: number };
 };
 
 type SqliteDb = {
@@ -338,7 +338,58 @@ export class VectorStore {
       ids.push(chunkIdx);
 
       insertFts.run(chunkIdx, chunk.content, chunk.path);
-      insertVec.run(chunkIdx, serializeEmbedding(chunk.embedding));
+      // sqlite-vec expects INTEGER-typed PK values. With better-sqlite3,
+      // passing a JS number binds as REAL; use bigint to force INTEGER.
+      insertVec.run(BigInt(chunkIdx), serializeEmbedding(chunk.embedding));
+    }
+    return ids;
+  }
+
+  insertChunksIgnoreConflicts(chunks: ChunkInsertInput[]): number[] {
+    const insertChunk = this.db.prepare(
+      `INSERT OR IGNORE INTO chunks(
+        chunk_id, path, start_line, end_line, content, content_hash, token_count,
+        created_at, updated_at, embedding_provider, embedding_model, embedding_dimensions, embedding_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const insertFts = this.db.prepare(
+      `INSERT INTO chunks_fts(chunk_idx, content, path) VALUES (?, ?, ?)`,
+    );
+    const insertVec = this.db.prepare(
+      `INSERT INTO chunks_vec(chunk_idx, embedding) VALUES (?, ?)`,
+    );
+    const lookupByChunkId = this.db.prepare(
+      `SELECT chunk_idx as chunkIdx FROM chunks WHERE chunk_id = ?`,
+    );
+
+    const ids: number[] = [];
+    for (const chunk of chunks) {
+      const now = Date.now();
+      const result = insertChunk.run(
+        chunk.chunkId,
+        chunk.path,
+        chunk.startLine,
+        chunk.endLine,
+        chunk.content,
+        chunk.contentHash,
+        chunk.tokenCount,
+        now,
+        now,
+        this.embedding.provider,
+        this.embedding.model,
+        this.embedding.dimensions,
+        serializeEmbedding(chunk.embedding),
+      );
+      const inserted = Number(result.changes ?? 0) > 0;
+      const rowid = Number(result.lastInsertRowid ?? 0);
+      const existing = lookupByChunkId.get(chunk.chunkId);
+      const chunkIdx = Number(existing?.chunkIdx ?? rowid);
+      ids.push(chunkIdx);
+
+      if (inserted) {
+        insertFts.run(chunkIdx, chunk.content, chunk.path);
+        insertVec.run(BigInt(chunkIdx), serializeEmbedding(chunk.embedding));
+      }
     }
     return ids;
   }
@@ -443,6 +494,20 @@ export class VectorStore {
         };
       })
       .filter(Boolean) as TextSearchResult[];
+  }
+
+  getMetaValue(key: string): string | null {
+    const row = this.db.prepare('SELECT value FROM meta WHERE key = ?').get(key);
+    if (!row?.value) return null;
+    return String(row.value);
+  }
+
+  setMetaValue(key: string, value: string): void {
+    this.db
+      .prepare(
+        'INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+      )
+      .run(key, value);
   }
 
   markAccess(chunkIdxs: number[]) {

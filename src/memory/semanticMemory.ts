@@ -7,6 +7,8 @@ import {
 import { SearchEngine, type SearchEngineOptions, type SearchResult } from './searchEngine.js';
 import { SyncManager, type SyncManagerOptions, type SyncVectorStore } from './syncManager.js';
 import { VectorStore, type VectorStoreConfig } from './vectorStore.js';
+import { TranscriptSyncManager, type TranscriptIndexState } from './transcriptSyncManager.js';
+import { CompositeSyncManager } from './compositeSyncManager.js';
 
 export type SemanticMemoryConfig = {
   enabled: boolean;
@@ -134,12 +136,30 @@ export class SemanticMemory {
       vecExtensionPath: semanticConfig.vecExtensionPath,
     });
     this.searchEngine = this.searchEngineFactory(this.store, this.searchOptions);
-    this.syncManager = this.syncManagerFactory({
+
+    const markdownSync = this.syncManagerFactory({
       rootDir: this.rootDir,
       scopeId: this.scopeId,
       vectorStore: this.store,
       embedder: this.embedder,
     });
+
+    const storeWithMeta = this.store as SyncVectorStore & TranscriptIndexState;
+    const hasMetaMethods =
+      typeof storeWithMeta.getMetaValue === 'function' &&
+      typeof storeWithMeta.setMetaValue === 'function';
+
+    if (hasMetaMethods) {
+      const transcriptSync = new TranscriptSyncManager({
+        rootDir: this.rootDir,
+        scopeId: this.scopeId,
+        vectorStore: storeWithMeta,
+        embedder: this.embedder,
+      });
+      this.syncManager = new CompositeSyncManager([markdownSync, transcriptSync]);
+    } else {
+      this.syncManager = markdownSync;
+    }
   }
 
   async sync(semanticConfig: SemanticMemoryConfig): Promise<void> {

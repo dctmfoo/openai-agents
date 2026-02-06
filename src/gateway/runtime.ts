@@ -1,6 +1,7 @@
 import { createTelegramAdapter } from '../interfaces/telegram/bot.js';
 import { resolveVersion, startAdminServer } from './admin.js';
 import { defaultSessionStore, SessionStore } from '../sessions/sessionStore.js';
+import { createSemanticSyncScheduler } from '../memory/semanticSyncScheduler.js';
 
 export type GatewayOptions = {
   telegram?: {
@@ -96,6 +97,12 @@ export async function startGateway(options: GatewayOptions) {
   const version =
     options.admin?.version ?? (await resolveVersion(haloHome));
 
+  const semanticSync = createSemanticSyncScheduler({
+    rootDir: haloHome,
+    sessionStore,
+    semanticConfig: options.config?.semanticMemory,
+  });
+
   const admin = await startAdminServer({
     host: adminHost,
     port: adminPort,
@@ -103,10 +110,17 @@ export async function startGateway(options: GatewayOptions) {
     version,
     sessionStore,
     config: options.config,
+    semanticSyncStatusProvider: semanticSync.getStatus,
     startedAtMs: options.admin?.startedAtMs,
   });
 
-  await telegram.start();
+  semanticSync.start();
+
+  try {
+    await telegram.start();
+  } finally {
+    semanticSync.stop();
+  }
 
   return { telegram, admin };
 }

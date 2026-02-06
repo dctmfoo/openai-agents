@@ -142,6 +142,49 @@ describe('gateway status handler', () => {
     expect(payload.gateway).toEqual({ host: '127.0.0.1', port: 7777 });
   });
 
+  it('includes semantic sync status in /status when provided', async () => {
+    const store = await makeSessionStore();
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: '1.2.3',
+      haloHome: buildHaloHomePaths('/halo'),
+      sessionStore: store,
+      semanticSyncStatusProvider: () => ({
+        enabled: true,
+        intervalMinutes: 15,
+        activeScopeCount: 2,
+        running: false,
+        lastRunStartedAtMs: 123,
+        lastRunFinishedAtMs: 124,
+        lastSuccessAtMs: 124,
+        totalRuns: 3,
+        totalFailures: 1,
+        lastError: {
+          scopeId: 'telegram:dm:wags',
+          message: 'boom',
+          atMs: 122,
+        },
+      }),
+    });
+
+    const res = makeMockResponse();
+    await handler({ method: 'GET', url: '/status' }, res);
+
+    const payload = JSON.parse(res.body) as {
+      semanticSync?: {
+        enabled?: boolean;
+        intervalMinutes?: number | null;
+        totalRuns?: number;
+      };
+    };
+
+    expect(payload.semanticSync?.enabled).toBe(true);
+    expect(payload.semanticSync?.intervalMinutes).toBe(15);
+    expect(payload.semanticSync?.totalRuns).toBe(3);
+  });
+
   it('returns scope ids for /sessions', async () => {
     const store = await makeSessionStore();
     store.getOrCreate('scope-2');
