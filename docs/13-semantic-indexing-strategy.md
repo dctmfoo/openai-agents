@@ -1,6 +1,6 @@
 # Semantic Indexing Strategy (Cost, Freshness, Safety)
 
-Status: **Proposed**
+Status: **In progress** (transcript watermark indexing + scheduler status visibility implemented)
 
 ## ADR Summary
 

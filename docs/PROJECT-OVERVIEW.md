@@ -1,6 +1,6 @@
 # Project Overview
 
-> **Main project tracking document** — Last updated: 2026-02-04
+> **Main project tracking document** — Last updated: 2026-02-06
 
 ## What is openai-agents?
 
@@ -17,7 +17,7 @@ A **family-first AI companion** called "Prime" (codename "Halo") built with the 
 | **Interfaces** | Telegram (grammY), CLI, Gateway HTTP server |
 | **Admin UI** | Tauri v2 desktop app (Vite) |
 | **Session Storage** | FileBackedSession (JSONL files) |
-| **Memory** | Markdown files (scoped per user/group) |
+| **Memory** | Scoped markdown memory + sqlite-vec semantic index |
 | **Validation** | Zod |
 | **Testing** | Vitest |
 | **Compaction** | OpenAI Responses API `/responses/compact` |
@@ -31,7 +31,7 @@ A **family-first AI companion** called "Prime" (codename "Halo") built with the 
 - **Telegram bot** — DMs + parents-only group chat
 - **CLI** — local testing (`pnpm dev:cli "..."`)
 - **Gateway server** — HTTP admin API on port 8787
-- **Tool framework** — deny-by-default registry with SDK hosted tools + scoped memory tools
+- **Tool framework** — deny-by-default registry with hosted web search + scoped memory tools + semantic search tool
 
 ### ✅ Privacy & Scopes
 - **Scoped conversations** — DM facts stay private, group facts shared among parents
@@ -44,7 +44,8 @@ A **family-first AI companion** called "Prime" (codename "Halo") built with the 
 - **Durable facts** → `MEMORY.md` (preferences, relationships)
 - **Temporal notes** → `YYYY-MM-DD.md` (daily log)
 - **Context loading** — SOUL.md + USER.md + scoped memory into Prime
-- **Semantic memory layer** — sqlite-vec + FTS5 hybrid search on top of markdown (per-scope index)
+- **Semantic memory layer** — sqlite-vec + FTS5 hybrid search with composite sync (markdown + transcript chunks) per scope
+- **Background semantic sync scheduler** — periodic sync for active scopes (`semanticMemory.syncIntervalMinutes`), exposed in `/status` and admin UI
 
 ### ✅ Session Management
 - **FileBackedSession** — JSONL persistence
@@ -59,83 +60,28 @@ A **family-first AI companion** called "Prime" (codename "Halo") built with the 
 - **Failure handling**: exponential backoff (30s → 10min cap)
 
 ### ✅ Admin Server
-- `/healthz`, `/status`, `/sessions`, `/policy/status`
+- `/healthz`, `/status`, `/sessions`, `/sessions-with-counts`, `/policy/status`
+- `/status` now includes semantic sync scheduler health/snapshot
 - `POST /sessions/:scopeId/distill` — manual distillation trigger
 - `POST /sessions/:scopeId/clear` — clear session state
-- Loopback-only: `/events/tail`, `/transcripts/tail`
+- `POST /sessions/:scopeId/purge?confirm=:scopeId` — purge session + transcript (loopback-only)
+- Loopback-only diagnostics: `/events/tail`, `/transcripts/tail`
 
 ---
 
-## Planned Features (Per Docs)
+## Near-term roadmap
 
-### M7: Boundary-first Tool Policy (Current Milestone)
-- Tools remain deny-by-default
-- Add safe read-only tools with explicit scope constraints
+### Current focus
+- **Hybrid file memory**: add OpenAI Vector Store + `file_search` path for Telegram file uploads while keeping local semantic chat memory.
+- **Admin UX**: improve semantic sync visibility and operational controls.
+- **Behavior evals**: add repeatable prompt/eval harness to prevent regressions.
 
-### Later (Documented)
-- Better onboarding (unknown DM flow)
-- Richer Prime behavior + sub-agents-as-tools
-- Evals harness for behavior regressions
-
-### Backlog (Proposed)
-- Audit/observability — distillation journal (JSONL)
-- Cost/safety guardrails — cap input size, runs-per-day
-- Incremental distillation — cursor-based, only new items
-- Batch distill — "distill all scopes" with progress
-- Node abstraction — device/account boundaries (not implemented)
-
----
-
-## Recommended Features (Priority Order)
-
-### 🔴 High Priority
-
-#### 1. LLM-based Distillation Option (Implemented)
-- Optional LLM distillation for nuanced fact extraction
-- Flag: `distillationMode: "deterministic" | "llm"`
-
-#### 2. Tool Framework
-- No tools implemented yet — Prime can only chat
-- Add: calendar read, reminders, web search, file read
-- Keep deny-by-default, require explicit scope permissions
-
-#### 3. Child-Safe Mode
-- Stricter guardrails when `role: child`
-- Content filtering, no access to parents-group context
-- Parental visibility into child conversations (opt-in)
-
-### 🟡 Medium Priority
-
-#### 4. Semantic Memory Layer
-- Current: grep/read markdown files
-- Add: embeddings + vector search for better retrieval
-- SQLite + sqlite-vec for vector storage
-
-#### 5. Multi-Model Support
-- Currently locked to OpenAI
-- Add Anthropic Claude as alternative (for when OpenAI is down)
-
-#### 6. Notification/Proactive System
-- Prime can only respond, not initiate
-- Add: scheduled check-ins, reminders, morning briefings
-
-#### 7. Voice Messages
-- Telegram supports voice — add transcription (Whisper)
-- Optional TTS for responses
-
-### 🟢 Nice to Have
-
-#### 8. Cross-Scope Sharing (Explicit)
-- "Share this with the family" command
-- Promotes DM fact to parents-group scope
-
-#### 9. Mobile-Friendly Admin
-- Tauri is desktop-only
-- Add simple web dashboard or Telegram admin commands
-
-#### 10. Evals Pipeline
-- Documented but not built
-- Add LLM-as-judge for tone, helpfulness, memory accuracy
+### Backlog (documented/proposed)
+- Audit/observability — richer distillation and indexing journals.
+- Cost/safety guardrails — cap indexing and model usage per scope.
+- Batch operations — scope-wide distill/sync with progress.
+- Voice support — Telegram voice transcription + optional TTS.
+- Node abstraction — device/account boundaries (not implemented).
 
 ---
 
@@ -144,17 +90,19 @@ A **family-first AI companion** called "Prime" (codename "Halo") built with the 
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Core chat | ✅ Working | Prime responds via Telegram/CLI |
-| Scoped memory | ✅ Working | Per-user, per-group isolation |
+| Scoped memory | ✅ Working | Per-user/per-group isolation |
 | Deterministic distillation | ✅ Working | Rule-based fact extraction |
-| Session compaction | ✅ Working | Via OpenAI Responses API |
-| Admin server | ✅ Working | HTTP API on port 8787 |
-| Tools | 🟡 In progress | Framework + scoped memory + hosted web search |
 | LLM distillation | ✅ Working | Optional mode in config |
-| Semantic search | ❌ Not implemented | Recommended |
-| Evals | ❌ Planned only | Documented but not built |
-| Multi-model | ❌ OpenAI only | Recommended |
-| Proactive/notifications | ❌ Reactive only | Recommended |
-| Voice | ❌ Not implemented | Nice to have |
+| Session compaction | ✅ Working | Via OpenAI Responses API |
+| Semantic search | ✅ Working | Local sqlite-vec + FTS hybrid retrieval |
+| Transcript incremental indexing | ✅ Working | Watermark-based transcript chunk indexing |
+| Background semantic sync | ✅ Working | Active-scope scheduler + `/status` snapshot |
+| Admin server + Tauri status | ✅ Working | Includes semantic sync card + session controls |
+| Tool framework | ✅ Working | Deny-by-default policy + web/scoped/semantic tools |
+| Evals harness | 🟡 Planned | Documented direction, limited automation today |
+| Multi-model runtime | ❌ OpenAI primary | OpenAI/Gemini embeddings exist; broader model routing pending |
+| Proactive notifications | ❌ Reactive only | No scheduled proactive messaging yet |
+| Voice | ❌ Not implemented | Planned |
 
 ---
 
@@ -194,6 +142,8 @@ openai-agents/
 | `SOUL.md` | Prime's core personality |
 | `USER.md` | User-specific context |
 | `docs/08-roadmap.md` | Milestone tracking |
+| `docs/13-semantic-indexing-strategy.md` | Transcript + semantic indexing design |
+| `docs/14-openai-file-search-telegram-upload-plan.md` | Planned hybrid file-search ingestion design |
 
 ---
 
@@ -226,6 +176,8 @@ pnpm test
 - [Onboarding](06-onboarding.md) — First-run guide
 - [Roadmap](08-roadmap.md) — Milestone tracking
 - [Tools](12-tools.md) — Tool registration guide
+- [Semantic indexing strategy](13-semantic-indexing-strategy.md) — Incremental transcript indexing design
+- [OpenAI file search + Telegram upload plan](14-openai-file-search-telegram-upload-plan.md) — Hybrid file-memory implementation plan
 - [Troubleshooting](11-troubleshooting.md) — Common fixes
 
 ---
