@@ -109,7 +109,7 @@ Notes:
 - `embeddingModel`: provider model name
 - `embeddingDimensions`: embedding size
 - `vecExtensionPath`: optional override for sqlite-vec extension path
-- `syncIntervalMinutes`: background sync cadence (minutes) for markdown -> vector store on active scopes (gateway + dev:telegram)
+- `syncIntervalMinutes`: background sync cadence (minutes) for semantic indexing on active scopes (markdown + transcript deltas; gateway + dev:telegram)
 - `search`: scoring weights and minimum relevance
 
 Requirements:

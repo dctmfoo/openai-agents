@@ -87,6 +87,19 @@ Notes:
 - Compaction is handled by `OpenAIResponsesCompactionSession` via `/responses/compact` and writes a compaction item into the derived session state. Raw transcripts remain append-only and unchanged; exact replacement behavior is SDK-defined.
 - When `distillationEnabled: true`, sessions are additionally wrapped by `DistillingTranscriptSession` which triggers memory distillation after every N items.
 
+## 5a) Semantic memory indexing
+
+Semantic retrieval is per-scope and uses sqlite-vec + FTS5 in `HALO_HOME/memory/scopes/<scopeHash>/semantic.db`.
+
+Current sync strategy combines two ingestion paths:
+- **Markdown sync**: hash-based sync of scoped markdown files (`MEMORY.md`, daily notes)
+- **Transcript sync**: incremental transcript indexing from append-only JSONL using a per-scope watermark (`transcript_last_indexed_offset`)
+
+Runtime behavior:
+- Gateway/telegram runtime starts a background scheduler (`semanticMemory.syncIntervalMinutes`) for active scopes.
+- `/status` includes scheduler health (runs, failures, last success/error).
+- Admin UI shows this snapshot in a dedicated semantic sync status card.
+
 ## 6) Memory distillation (durable vs temporal)
 
 We keep memory files separate from session state.

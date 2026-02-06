@@ -2,6 +2,15 @@
 
 Tools are deny-by-default. Every tool must be explicitly registered and allowlisted.
 
+## Current registered tools
+
+- `web_search_call` (hosted web search)
+- `read_scoped_memory` (read scoped long-term/today/yesterday markdown)
+- `remember_daily` (append a scoped daily note)
+- `semantic_search` (local semantic retrieval from scoped index)
+
+Tool availability still depends on policy (`src/policies/toolPolicy.ts`).
+
 ## Registering a tool
 
 1. Implement the tool in `src/tools/`. Use `tool(...)` for local tools or `HostedTool` for OpenAI hosted tools.
