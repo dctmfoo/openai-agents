@@ -28,7 +28,7 @@
   "packageManager": "pnpm@10.28.1",
   "dependencies": {
     "@openai/agents": "^0.4.4",
-    "better-sqlite3": "^11.8.1",
+    "better-sqlite3": "^12.6.2",
     "dotenv": "^17.2.3",
     "grammy": "^1.39.3",
     "openai": "^6.17.0",
@@ -39,7 +39,7 @@
     "@types/node": "^25.2.0",
     "@typescript-eslint/parser": "^8.42.0",
     "eslint": "^9.28.0",
-    "eslint-plugin-sonarjs": "^2.0.4",
+    "eslint-plugin-sonarjs": "^3.0.6",
     "jscpd": "^4.0.0",
     "knip": "^5.0.0",
     "tsx": "^4.21.0",
