@@ -90,7 +90,7 @@ class TranscriptSyncManager {
     }
 
     const insert = vectorStore.insertChunksIgnoreConflicts ?? vectorStore.insertChunks;
-    insert.call(vectorStore, inserts);
+    await insert.call(vectorStore, inserts);
 
     setLastIndexedOffset(vectorStore, endOffset);
   }

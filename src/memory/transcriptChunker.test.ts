@@ -92,6 +92,11 @@ describe('transcriptChunker', () => {
     it('does not flag non-message items', () => {
       expect(isAckOnly(toolCall('search'))).toBe(false);
     });
+
+    it('does not treat empty or unrecognized message content as ack', () => {
+      expect(isAckOnly({ type: 'message', role: 'user', content: [] })).toBe(false);
+      expect(isAckOnly({ type: 'message', role: 'user', content: [{ type: 'image' }] })).toBe(false);
+    });
   });
 
   describe('buildExchanges', () => {

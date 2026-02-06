@@ -217,4 +217,29 @@ describe('transcriptSyncManager', () => {
     await sync.sync();
     expect(getLastIndexedOffset(store)).toBe(6);
   });
+
+  it('does not advance watermark when async insert fails', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'tsm-'));
+    await writeScopeTranscript(rootDir, [
+      userLine('hello'),
+      assistantLine('hi'),
+    ]);
+
+    const store = {
+      ...makeStore(),
+      insertChunksIgnoreConflicts: async () => {
+        throw new Error('insert failed');
+      },
+    };
+
+    const sync = new TranscriptSyncManager({
+      rootDir,
+      scopeId: SCOPE_ID,
+      vectorStore: store,
+      embedder: async (texts) => texts.map(() => [1, 0]),
+    });
+
+    await expect(sync.sync()).rejects.toThrow('insert failed');
+    expect(getLastIndexedOffset(store)).toBe(0);
+  });
 });

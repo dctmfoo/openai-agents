@@ -134,7 +134,7 @@ function isAckOnly(item: TranscriptItem): boolean {
     text = parts.join(' ');
   }
 
-  if (!text) return true;
+  if (!text) return false;
   return ACK_PATTERN.test(text.trim());
 }
 

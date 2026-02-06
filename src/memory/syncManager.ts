@@ -11,6 +11,8 @@ type ActiveChunk = {
   embedding: number[];
 };
 
+type MaybePromise<T> = T | Promise<T>;
+
 export type SyncVectorStore = {
   listFiles: () => Array<{ path: string; hash: string; updatedAt: number; lastIndexedAt: number }>;
   getFile: (path: string) => { path: string; hash: string; updatedAt: number; lastIndexedAt: number } | null;
@@ -28,7 +30,7 @@ export type SyncVectorStore = {
     contentHash: string;
     tokenCount: number;
     embedding: number[];
-  }>) => number[];
+  }>) => MaybePromise<number[]>;
   insertChunksIgnoreConflicts?: (chunks: Array<{
     chunkId: string;
     path: string;
@@ -38,7 +40,7 @@ export type SyncVectorStore = {
     contentHash: string;
     tokenCount: number;
     embedding: number[];
-  }>) => number[];
+  }>) => MaybePromise<number[]>;
   supersedeChunks: (chunkIdxs: number[], supersededBy?: number | null) => void;
 };
 
@@ -182,7 +184,7 @@ export class SyncManager {
       this.options.vectorStore.upsertEmbeddingCache(entry.contentHash, entry.embedding);
     });
 
-    const newChunkIdxs = this.options.vectorStore.insertChunks(inserts);
+    const newChunkIdxs = await this.options.vectorStore.insertChunks(inserts);
     const similarityThreshold = this.options.similarityThreshold ?? DEFAULT_SIMILARITY_THRESHOLD;
     const supersedeMap = new Map<number, number | null>();
 
