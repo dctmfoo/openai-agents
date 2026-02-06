@@ -43,16 +43,20 @@ async function readTranscriptAfterOffset(
     : rawLines.slice(effectiveOffset);
 
   const lines: TranscriptLine[] = [];
+  let endOffset = effectiveOffset;
+
   for (let i = 0; i < sliced.length; i++) {
+    const offset = effectiveOffset + i;
     try {
       const item = JSON.parse(sliced[i]) as TranscriptItem;
-      lines.push({ offset: effectiveOffset + i, item });
+      lines.push({ offset, item });
+      endOffset = offset + 1;
     } catch {
-      // Skip malformed lines
+      // Stop at first malformed line so a partial write can be retried.
+      break;
     }
   }
 
-  const endOffset = effectiveOffset + sliced.length;
   return { lines, endOffset };
 }
 

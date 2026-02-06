@@ -82,7 +82,7 @@ describe('transcriptReader', () => {
     expect(result.endOffset).toBe(5);
   });
 
-  it('skips malformed JSON lines', async () => {
+  it('stops before malformed JSON lines so they can be retried', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'tr-'));
     await writeScopeTranscript(root, [
       '{"type":"message","role":"user","content":"valid"}',
@@ -91,7 +91,8 @@ describe('transcriptReader', () => {
     ]);
 
     const result = await readTranscriptAfterOffset(root, SCOPE_ID, 0);
-    expect(result.lines).toHaveLength(2);
-    expect(result.endOffset).toBe(3);
+    expect(result.lines).toHaveLength(1);
+    expect(result.lines[0].item.content).toBe('valid');
+    expect(result.endOffset).toBe(1);
   });
 });
