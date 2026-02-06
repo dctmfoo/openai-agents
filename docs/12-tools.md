@@ -8,6 +8,7 @@ Tools are deny-by-default. Every tool must be explicitly registered and allowlis
 - `read_scoped_memory` (read scoped long-term/today/yesterday markdown)
 - `remember_daily` (append a scoped daily note)
 - `semantic_search` (local semantic retrieval from scoped index)
+- `file_search` (hosted OpenAI file search; enabled only when scope has a vector store and `fileMemory.enabled=true`)
 
 Tool availability still depends on policy (`src/policies/toolPolicy.ts`).
 

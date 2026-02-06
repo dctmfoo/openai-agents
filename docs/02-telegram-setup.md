@@ -42,7 +42,7 @@ Notes:
 
 ```bash
 cp config/halo.example.json ~/.halo/config.json
-# edit ~/.halo/config.json (gateway, features, memory, childSafe, semanticMemory)
+# edit ~/.halo/config.json (gateway, features, memory, childSafe, semanticMemory, fileMemory)
 ```
 
 ## 3) Run locally
@@ -71,9 +71,16 @@ pnpm start:gateway
 - Family config is loaded once at startup; restart to pick up changes.
 - `OPENAI_API_KEY` is required for real model calls (smoke tests stub the model).
 - Semantic memory background sync is built-in for active scopes when `semanticMemory.enabled=true`; cadence is `semanticMemory.syncIntervalMinutes`.
+- Telegram `message:document` uploads are enabled only when `fileMemory.enabled=true` and `fileMemory.uploadEnabled=true`.
+- During upload flow, users receive stage updates (download started, indexing started, final success/failure).
+- Optional retention cleanup can be enabled via `fileMemory.retention.enabled=true` in `HALO_HOME/config.json` (with optional `policyPreset`, `allowScopeIds`, and `denyScopeIds` controls; role-based presets use `family.json` member roles).
 
 Gateway admin exposes:
 
 - `GET /events/tail?lines=N` (loopback-only)
 - `GET /transcripts/tail?scopeId=...&lines=N` (loopback-only)
+- `GET /sessions/:scopeId/files` (when `fileMemory.enabled=true`)
+- `POST /sessions/:scopeId/files/:fileRef/delete?deleteOpenAIFile=0|1` (loopback-only)
+- `POST /sessions/:scopeId/files/purge?deleteOpenAIFiles=0|1` (loopback-only)
+- `POST /file-retention/run?scopeId=...&dryRun=0|1&uploadedBy=...&extensions=...&mimePrefixes=...&uploadedAfterMs=...&uploadedBeforeMs=...` (loopback-only)
 - `POST /sessions/:scopeId/purge?confirm=:scopeId` (loopback-only)

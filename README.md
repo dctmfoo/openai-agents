@@ -42,6 +42,7 @@ cp config/family.example.json ~/.halo/config/family.json
 - `memory`: `distillationEveryNItems`, `distillationMaxItems`
 - `childSafe`: child guardrails (length, topics)
 - `semanticMemory`: embeddings + sqlite-vec settings
+- `fileMemory`: OpenAI vector-store upload + hosted file-search controls
 
 Validate configs (optional):
 
@@ -94,6 +95,7 @@ pnpm smoke:e2e
 - **Transcripts are append-only** under `HALO_HOME/transcripts/<hash>.jsonl`.
 - **Derived session state** (summaries/compactions) lives under `HALO_HOME/sessions/<hash>.jsonl`.
 - **Scoped memory** (distilled facts, daily notes) under `HALO_HOME/memory/scopes/<hash>/`.
+- **Scoped file memory (phase 3 shipped)** for Telegram `message:document` uploads under `HALO_HOME/file-memory/scopes/<hash>/` (OpenAI vector stores + hosted `file_search`) with retention cleanup, dry-run, guardrails, policy presets, and metadata-filtered manual retention runs.
 
 Scope IDs follow the pattern `telegram:dm:<memberId>` or `telegram:parents_group:<chatId>`.
 

@@ -18,6 +18,7 @@ describe('toolPolicy', () => {
     expect(decision.allowedToolNames.has(TOOL_NAMES.readScopedMemory)).toBe(true);
     expect(decision.allowedToolNames.has(TOOL_NAMES.rememberDaily)).toBe(true);
     expect(decision.allowedToolNames.has(TOOL_NAMES.semanticSearch)).toBe(true);
+    expect(decision.allowedToolNames.has(TOOL_NAMES.fileSearch)).toBe(true);
     expect(decision.allowedToolNames.has(TOOL_NAMES.webSearch)).toBe(true);
   });
 
@@ -27,6 +28,7 @@ describe('toolPolicy', () => {
     expect(decision.allowedToolNames.has(TOOL_NAMES.readScopedMemory)).toBe(true);
     expect(decision.allowedToolNames.has(TOOL_NAMES.rememberDaily)).toBe(true);
     expect(decision.allowedToolNames.has(TOOL_NAMES.semanticSearch)).toBe(true);
+    expect(decision.allowedToolNames.has(TOOL_NAMES.fileSearch)).toBe(true);
     expect(decision.allowedToolNames.has(TOOL_NAMES.webSearch)).toBe(false);
   });
 
@@ -35,6 +37,7 @@ describe('toolPolicy', () => {
 
     expect(decision.allowedToolNames.has(TOOL_NAMES.readScopedMemory)).toBe(true);
     expect(decision.allowedToolNames.has(TOOL_NAMES.rememberDaily)).toBe(true);
+    expect(decision.allowedToolNames.has(TOOL_NAMES.fileSearch)).toBe(true);
     expect(decision.allowedToolNames.has(TOOL_NAMES.webSearch)).toBe(true);
   });
 
@@ -47,6 +50,7 @@ describe('toolPolicy', () => {
 
     expect(decision.allowedToolNames.has(TOOL_NAMES.readScopedMemory)).toBe(true);
     expect(decision.allowedToolNames.has(TOOL_NAMES.rememberDaily)).toBe(true);
+    expect(decision.allowedToolNames.has(TOOL_NAMES.fileSearch)).toBe(true);
     expect(decision.allowedToolNames.has(TOOL_NAMES.webSearch)).toBe(true);
   });
 });

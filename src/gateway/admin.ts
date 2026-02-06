@@ -7,6 +7,15 @@ import type { SessionStore } from '../sessions/sessionStore.js';
 import { runDistillation } from '../memory/distillationRunner.js';
 import { SemanticMemory, type SemanticMemoryConfig } from '../memory/semanticMemory.js';
 import type { SemanticSyncStatusSnapshot } from '../memory/semanticSyncScheduler.js';
+import {
+  deleteScopeUploadedFile,
+  listScopeUploadedFiles,
+  purgeScopeUploadedFiles,
+} from '../files/fileMemoryLifecycle.js';
+import type {
+  FileMemoryRetentionRunOptions,
+  FileMemoryRetentionStatusSnapshot,
+} from '../files/fileMemoryRetentionScheduler.js';
 
 export type HaloHomePaths = {
   root: string;
@@ -58,8 +67,32 @@ type GatewayStatus = {
         minScore?: number;
       };
     };
+    fileMemory?: {
+      enabled?: boolean;
+      uploadEnabled?: boolean;
+      maxFileSizeMb?: number;
+      allowedExtensions?: string[];
+      maxFilesPerScope?: number;
+      pollIntervalMs?: number;
+      includeSearchResults?: boolean;
+      maxNumResults?: number;
+      retention?: {
+        enabled?: boolean;
+        maxAgeDays?: number;
+        runIntervalMinutes?: number;
+        deleteOpenAIFiles?: boolean;
+        maxFilesPerRun?: number;
+        dryRun?: boolean;
+        keepRecentPerScope?: number;
+        maxDeletesPerScopePerRun?: number;
+        allowScopeIds?: string[];
+        denyScopeIds?: string[];
+        policyPreset?: 'all' | 'parents_only' | 'exclude_children' | 'custom';
+      };
+    };
   };
   semanticSync?: SemanticSyncStatusSnapshot;
+  fileRetention?: FileMemoryRetentionStatusSnapshot;
 };
 
 type PolicyScopeStatus = {
@@ -85,6 +118,8 @@ export type StatusContext = {
   sessionStore: SessionStore;
   config?: GatewayStatus['config'];
   semanticSyncStatusProvider?: () => SemanticSyncStatusSnapshot;
+  fileRetentionStatusProvider?: () => FileMemoryRetentionStatusSnapshot;
+  runFileRetentionNow?: (options?: FileMemoryRetentionRunOptions) => Promise<void>;
   now?: () => number;
 };
 
@@ -116,6 +151,77 @@ const parseTailLines = (value: string | null) => {
     return DEFAULT_TAIL_LINES;
   }
   return parsed;
+};
+
+const parseBooleanQuery = (value: string | null, defaultValue: boolean): boolean => {
+  if (value === null) return defaultValue;
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return defaultValue;
+};
+
+const parseCsvQuery = (value: string | null): string[] | undefined => {
+  if (value === null) return undefined;
+
+  const parsed = Array.from(
+    new Set(
+      value
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+    ),
+  );
+
+  return parsed.length > 0 ? parsed : undefined;
+};
+
+const parseMsQuery = (value: string | null): number | undefined => {
+  if (value === null) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return undefined;
+  }
+  return parsed;
+};
+
+const decodePathParam = (raw: string): string | null => {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
+};
+
+type SessionFileRoute =
+  | { kind: 'list'; scopeId: string }
+  | { kind: 'purge'; scopeId: string }
+  | { kind: 'delete'; scopeId: string; fileRef: string };
+
+const matchSessionFileRoute = (path: string): SessionFileRoute | null => {
+  const listMatch = path.match(/^\/sessions\/(.+)\/files$/);
+  if (listMatch) {
+    const scopeId = decodePathParam(listMatch[1]);
+    if (!scopeId) return null;
+    return { kind: 'list', scopeId };
+  }
+
+  const purgeMatch = path.match(/^\/sessions\/(.+)\/files\/purge$/);
+  if (purgeMatch) {
+    const scopeId = decodePathParam(purgeMatch[1]);
+    if (!scopeId) return null;
+    return { kind: 'purge', scopeId };
+  }
+
+  const deleteMatch = path.match(/^\/sessions\/(.+)\/files\/([^/]+)\/delete$/);
+  if (deleteMatch) {
+    const scopeId = decodePathParam(deleteMatch[1]);
+    const fileRef = decodePathParam(deleteMatch[2]);
+    if (!scopeId || !fileRef) return null;
+    return { kind: 'delete', scopeId, fileRef };
+  }
+
+  return null;
 };
 
 const parseJsonLine = (line: string) => {
@@ -216,6 +322,8 @@ export type AdminServerOptions = {
   sessionStore: SessionStore;
   config?: GatewayStatus['config'];
   semanticSyncStatusProvider?: () => SemanticSyncStatusSnapshot;
+  fileRetentionStatusProvider?: () => FileMemoryRetentionStatusSnapshot;
+  runFileRetentionNow?: (options?: FileMemoryRetentionRunOptions) => Promise<void>;
   startedAtMs?: number;
   now?: () => number;
 };
@@ -264,6 +372,7 @@ function createStatusPayload(context: StatusContext): GatewayStatus {
     },
     config: context.config,
     semanticSync: context.semanticSyncStatusProvider?.(),
+    fileRetention: context.fileRetentionStatusProvider?.(),
   };
 }
 
@@ -314,6 +423,145 @@ export function createStatusHandler(context: StatusContext): StatusHandler {
         const payload = await buildPolicyStatus(context.haloHome.root);
         sendJson(200, payload);
         return;
+      }
+
+      if (req.method === 'POST' && path === '/file-retention/run') {
+        if (!isLoopbackAddress(req.socket?.remoteAddress)) {
+          sendJson(403, { error: 'forbidden' });
+          return;
+        }
+
+        if (!context.config?.fileMemory?.enabled) {
+          sendJson(409, { error: 'file_memory_disabled' });
+          return;
+        }
+
+        if (!context.config?.fileMemory?.retention?.enabled) {
+          sendJson(409, { error: 'file_retention_disabled' });
+          return;
+        }
+
+        if (!context.runFileRetentionNow) {
+          sendJson(503, { error: 'file_retention_unavailable' });
+          return;
+        }
+
+        const url = new URL(req.url ?? '', 'http://localhost');
+        const scopeId = url.searchParams.get('scopeId')?.trim() || undefined;
+        const dryRun = parseBooleanQuery(
+          url.searchParams.get('dryRun'),
+          context.config?.fileMemory?.retention?.dryRun ?? false,
+        );
+        const uploadedBy = parseCsvQuery(url.searchParams.get('uploadedBy'));
+        const extensions = parseCsvQuery(url.searchParams.get('extensions'));
+        const mimePrefixes = parseCsvQuery(url.searchParams.get('mimePrefixes'));
+        const uploadedAfterMs = parseMsQuery(url.searchParams.get('uploadedAfterMs'));
+        const uploadedBeforeMs = parseMsQuery(url.searchParams.get('uploadedBeforeMs'));
+
+        try {
+          await context.runFileRetentionNow({
+            scopeId,
+            dryRun,
+            uploadedBy,
+            extensions,
+            mimePrefixes,
+            uploadedAfterMs,
+            uploadedBeforeMs,
+          });
+        } catch (err) {
+          sendJson(500, {
+            error: 'file_retention_failed',
+            message: err instanceof Error ? err.message : String(err),
+          });
+          return;
+        }
+
+        sendJson(200, {
+          ok: true,
+          requested: {
+            scopeId: scopeId ?? null,
+            dryRun,
+            uploadedBy: uploadedBy ?? null,
+            extensions: extensions ?? null,
+            mimePrefixes: mimePrefixes ?? null,
+            uploadedAfterMs: uploadedAfterMs ?? null,
+            uploadedBeforeMs: uploadedBeforeMs ?? null,
+          },
+          status: context.fileRetentionStatusProvider?.(),
+        });
+        return;
+      }
+
+      const sessionFileRoute = matchSessionFileRoute(path);
+      if (sessionFileRoute) {
+        if (!context.config?.fileMemory?.enabled) {
+          sendJson(409, { error: 'file_memory_disabled' });
+          return;
+        }
+
+        const url = new URL(req.url ?? '', 'http://localhost');
+
+        if (sessionFileRoute.kind === 'list' && req.method === 'GET') {
+          const payload = await listScopeUploadedFiles({
+            rootDir: context.haloHome.root,
+            scopeId: sessionFileRoute.scopeId,
+          });
+          sendJson(200, payload);
+          return;
+        }
+
+        if (sessionFileRoute.kind === 'delete' && req.method === 'POST') {
+          if (!isLoopbackAddress(req.socket?.remoteAddress)) {
+            sendJson(403, { error: 'forbidden' });
+            return;
+          }
+
+          const deleteOpenAIFile = parseBooleanQuery(
+            url.searchParams.get('deleteOpenAIFile'),
+            false,
+          );
+
+          const result = await deleteScopeUploadedFile({
+            rootDir: context.haloHome.root,
+            scopeId: sessionFileRoute.scopeId,
+            fileRef: sessionFileRoute.fileRef,
+            deleteOpenAIFile,
+          });
+
+          if (!result.ok) {
+            if (result.code === 'scope_not_found' || result.code === 'file_not_found') {
+              sendJson(404, { error: result.code, message: result.message });
+              return;
+            }
+
+            sendJson(502, { error: result.code, message: result.message });
+            return;
+          }
+
+          sendJson(200, result);
+          return;
+        }
+
+        if (sessionFileRoute.kind === 'purge' && req.method === 'POST') {
+          if (!isLoopbackAddress(req.socket?.remoteAddress)) {
+            sendJson(403, { error: 'forbidden' });
+            return;
+          }
+
+          const deleteOpenAIFiles = parseBooleanQuery(
+            url.searchParams.get('deleteOpenAIFiles'),
+            false,
+          );
+
+          const result = await purgeScopeUploadedFiles({
+            rootDir: context.haloHome.root,
+            scopeId: sessionFileRoute.scopeId,
+            deleteOpenAIFiles,
+          });
+
+          sendJson(200, result);
+          return;
+        }
       }
 
       if (req.method === 'GET' && path === '/events/tail') {
@@ -551,6 +799,8 @@ export async function startAdminServer(options: AdminServerOptions): Promise<Adm
     sessionStore: options.sessionStore,
     config: options.config,
     semanticSyncStatusProvider: options.semanticSyncStatusProvider,
+    fileRetentionStatusProvider: options.fileRetentionStatusProvider,
+    runFileRetentionNow: options.runFileRetentionNow,
     now: options.now,
   };
 

@@ -1,6 +1,31 @@
 # OpenAI File Search + Telegram Upload Plan (Hybrid Memory)
 
-Status: **Proposed**
+Status: **Phase 3 hardening implemented + P0 hardening implemented**
+
+## 0) Delivery status (2026-02-06)
+
+### ✅ Implemented
+
+- Telegram `message:document` ingestion path.
+- Per-scope registry under `HALO_HOME/file-memory/scopes/<hash>/registry.json`.
+- Per-scope OpenAI vector-store creation/reuse.
+- Hosted `file_search` tool wiring (dynamic, scope-aware).
+- Prime tool-routing instructions for `semantic_search` vs `file_search`.
+- `fileMemory` config schema and runtime wiring.
+- Phase-3 retention hardening: background cleanup scheduler + dry-run mode + keep-recent/per-scope caps + role-aware presets + manual admin trigger + `/status` visibility.
+- Manual retention runs now support metadata filters (`uploadedBy`, `extensions`, `mimePrefixes`, `uploadedAfterMs`, `uploadedBeforeMs`) with per-run skip counters.
+
+### ✅ P0 hardening implemented
+
+- **In-process per-scope upload lock** in `openaiFileIndexer` to avoid duplicate vector-store creation and racey concurrent writes.
+- **Retry with exponential backoff** for transient OpenAI failures (429/5xx/network-style errors).
+- **Idempotent duplicate upload behavior**: already-completed Telegram file IDs short-circuit to success without re-uploading.
+- **Post-download size enforcement** in Telegram adapter (checks actual downloaded byte length, not only metadata).
+
+### ⏳ Pending (next)
+
+- End-to-end live integration tests against real Telegram + OpenAI APIs.
+- Richer observability (file-memory metrics/alerts in admin surfaces).
 
 ## 1) Goal
 
@@ -259,19 +284,44 @@ Need explicit operations for maintenance:
 
 ## 13) Rollout plan
 
-### Phase 1 (MVP)
+### Phase 1 (MVP) — ✅ shipped
 - `message:document` ingestion
 - per-scope vector store registry
 - dynamic `file_search` tool wiring
 - minimal status logging
 
-### Phase 2
-- admin endpoints for file memory status/list/delete
-- better user-facing upload progress and error messages
+### P0 hardening — ✅ shipped (current pass)
+- per-scope upload serialization lock
+- transient OpenAI retry/backoff
+- duplicate upload short-circuit (idempotency)
+- downloaded-byte-size validation
 
-### Phase 3
-- retention policies + cleanup jobs
-- richer filtering metadata (by uploader/date/type)
+### Phase 2 — ✅ shipped
+- ✅ admin endpoints for file memory status/list/delete/purge
+  - `GET /sessions/:scopeId/files`
+  - `POST /sessions/:scopeId/files/:fileRef/delete?deleteOpenAIFile=0|1`
+  - `POST /sessions/:scopeId/files/purge?deleteOpenAIFiles=0|1`
+- ✅ richer user-facing upload progress + failure messages in Telegram
+  - progress acknowledgements for download + indexing stages
+  - friendlier limit/failure guidance for indexing errors
+
+### Phase 3 — ✅ shipped
+- ✅ retention cleanup scheduler + on-demand trigger
+  - config: `fileMemory.retention.{enabled,maxAgeDays,runIntervalMinutes,deleteOpenAIFiles,maxFilesPerRun,dryRun,keepRecentPerScope,maxDeletesPerScopePerRun,allowScopeIds,denyScopeIds,policyPreset}`
+  - runtime scheduler: periodic stale-file cleanup (global + per-scope caps + role-aware preset/allow/deny scope filters)
+  - admin endpoint: `POST /file-retention/run?scopeId=...&dryRun=0|1&uploadedBy=...&extensions=...&mimePrefixes=...&uploadedAfterMs=...&uploadedBeforeMs=...` (loopback-only)
+  - `/status` includes `fileRetention` snapshot for ops visibility
+- ✅ safety guardrails
+  - dry-run mode
+  - skip `in_progress` uploads
+  - protect newest N files per scope
+  - per-scope deletion cap
+- ✅ retention policy hardening
+  - tuned defaults: `keepRecentPerScope=2`, `policyPreset=exclude_children`
+  - preset UX polish: `exclude_children` excludes known child DMs while allowing unknown DMs
+- ✅ richer filtering metadata (by uploader/date/type)
+  - manual trigger supports `uploadedBy`, `extensions`, `mimePrefixes`, `uploadedAfterMs`, `uploadedBeforeMs`
+  - run summary now reports `excludedByUploaderCount`, `excludedByTypeCount`, `excludedByDateCount`
 
 ### Phase 4 (optional)
 - image/OCR ingestion path
@@ -303,6 +353,8 @@ Primary files expected to change:
 - new module(s), e.g.:
   - `src/files/scopeFileRegistry.ts`
   - `src/files/openaiFileIndexer.ts`
+  - `src/files/fileMemoryLifecycle.ts` (Phase 2 admin lifecycle ops)
+  - `src/files/fileMemoryRetentionScheduler.ts` (Phase 3 retention scheduler + hardening controls)
   - `src/tools/openaiFileSearchTool.ts` (or inline hosted tool builder)
 
 This plan intentionally keeps existing local semantic memory untouched and adds file-search as an additive capability.

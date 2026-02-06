@@ -61,7 +61,7 @@ A **family-first AI companion** called "Prime" (codename "Halo") built with the 
 
 ### ✅ Admin Server
 - `/healthz`, `/status`, `/sessions`, `/sessions-with-counts`, `/policy/status`
-- `/status` now includes semantic sync scheduler health/snapshot
+- `/status` now includes semantic sync + file-retention scheduler health/snapshots
 - `POST /sessions/:scopeId/distill` — manual distillation trigger
 - `POST /sessions/:scopeId/clear` — clear session state
 - `POST /sessions/:scopeId/purge?confirm=:scopeId` — purge session + transcript (loopback-only)
@@ -72,7 +72,7 @@ A **family-first AI companion** called "Prime" (codename "Halo") built with the 
 ## Near-term roadmap
 
 ### Current focus
-- **Hybrid file memory**: add OpenAI Vector Store + `file_search` path for Telegram file uploads while keeping local semantic chat memory.
+- **Hybrid file memory**: phase 3 hardening is shipped (dry-run/guardrails/manual trigger + scope allow/deny + role-aware presets + metadata-filtered manual runs); next focus is live E2E coverage + richer observability.
 - **Admin UX**: improve semantic sync visibility and operational controls.
 - **Behavior evals**: add repeatable prompt/eval harness to prevent regressions.
 
@@ -98,7 +98,8 @@ A **family-first AI companion** called "Prime" (codename "Halo") built with the 
 | Transcript incremental indexing | ✅ Working | Watermark-based transcript chunk indexing |
 | Background semantic sync | ✅ Working | Active-scope scheduler + `/status` snapshot |
 | Admin server + Tauri status | ✅ Working | Includes semantic sync card + session controls |
-| Tool framework | ✅ Working | Deny-by-default policy + web/scoped/semantic tools |
+| Tool framework | ✅ Working | Deny-by-default policy + web/scoped/semantic/file-search tools |
+| Hybrid file memory | ✅ Phase 3 shipped | Phase 1/2/3 shipped: retention dry-run/guardrails/manual trigger/status + scope allow/deny + policy presets + metadata-filtered manual runs |
 | Evals harness | 🟡 Planned | Documented direction, limited automation today |
 | Multi-model runtime | ❌ OpenAI primary | OpenAI/Gemini embeddings exist; broader model routing pending |
 | Proactive notifications | ❌ Reactive only | No scheduled proactive messaging yet |
