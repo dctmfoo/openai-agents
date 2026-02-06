@@ -9,9 +9,13 @@ import {
 type OpenAIClientLike = {
   vectorStores: {
     files: {
-      delete: (
+      delete?: (
         vectorStoreFileId: string,
         params: { vector_store_id: string },
+      ) => Promise<unknown>;
+      del?: (
+        vectorStoreId: string,
+        vectorStoreFileId: string,
       ) => Promise<unknown>;
     };
   };
@@ -85,9 +89,21 @@ async function deleteRemoteVectorStoreFile(
     throw new Error('Vector store is not configured for this scope.');
   }
 
-  await client.vectorStores.files.delete(vectorStoreFileId, {
-    vector_store_id: vectorStoreId,
-  });
+  const filesApi = client.vectorStores.files;
+
+  if (typeof filesApi.delete === 'function') {
+    await filesApi.delete(vectorStoreFileId, {
+      vector_store_id: vectorStoreId,
+    });
+    return;
+  }
+
+  if (typeof filesApi.del === 'function') {
+    await filesApi.del(vectorStoreId, vectorStoreFileId);
+    return;
+  }
+
+  throw new Error('Vector store file delete API is unavailable on OpenAI client.');
 }
 
 function findFileIndex(files: ScopeFileRecord[], fileRef: string): number {

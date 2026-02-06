@@ -92,6 +92,41 @@ describe('fileMemoryLifecycle', () => {
     expect(registry?.files).toHaveLength(0);
   });
 
+  it('supports legacy del(vectorStoreId, fileId) delete signature', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'file-memory-lifecycle-'));
+    const scopeId = 'telegram:dm:wags';
+
+    await seedScopeWithOneFile(rootDir, scopeId);
+
+    const client = {
+      vectorStores: {
+        files: {
+          del: vi.fn().mockResolvedValue({ id: 'vsfile_1', deleted: true }),
+        },
+      },
+      files: {
+        delete: vi.fn().mockResolvedValue({ id: 'file_1', deleted: true }),
+      },
+    };
+
+    const result = await deleteScopeUploadedFile(
+      {
+        rootDir,
+        scopeId,
+        fileRef: 'telegram-unique-1',
+        deleteOpenAIFile: true,
+      },
+      { client: client as any },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(client.vectorStores.files.del).toHaveBeenCalledWith('vs_1', 'vsfile_1');
+    expect(client.files.delete).toHaveBeenCalledWith('file_1');
+
+    const registry = await readScopeFileRegistry({ rootDir, scopeId });
+    expect(registry?.files).toHaveLength(0);
+  });
+
   it('purges files and retains failed deletions for retry', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'file-memory-lifecycle-'));
     const scopeId = 'telegram:dm:wags';
