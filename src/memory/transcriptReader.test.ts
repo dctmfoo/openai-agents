@@ -71,6 +71,13 @@ describe('transcriptReader', () => {
     expect(result.endOffset).toBe(0);
   });
 
+  it('clamps negative offset to 0 for missing file', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'tr-'));
+    const result = await readTranscriptAfterOffset(root, SCOPE_ID, -10);
+    expect(result.lines).toEqual([]);
+    expect(result.endOffset).toBe(0);
+  });
+
   it('returns empty when offset is beyond file length', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'tr-'));
     await writeScopeTranscript(root, [

@@ -18,6 +18,7 @@ async function readTranscriptAfterOffset(
   afterOffset: number,
   maxLines?: number,
 ): Promise<TranscriptReadResult> {
+  const effectiveOffset = afterOffset < 0 ? 0 : afterOffset;
   const filePath = getTranscriptPath(rootDir, scopeId);
   let data: string;
 
@@ -25,7 +26,7 @@ async function readTranscriptAfterOffset(
     data = await readFile(filePath, 'utf8');
   } catch (err) {
     if (err && typeof err === 'object' && (err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { lines: [], endOffset: afterOffset };
+      return { lines: [], endOffset: effectiveOffset };
     }
     throw err;
   }
@@ -33,11 +34,10 @@ async function readTranscriptAfterOffset(
   const rawLines = data.split(/\r?\n/).filter((line) => line.length > 0);
   const totalLines = rawLines.length;
 
-  if (afterOffset >= totalLines) {
-    return { lines: [], endOffset: afterOffset };
+  if (effectiveOffset >= totalLines) {
+    return { lines: [], endOffset: effectiveOffset };
   }
 
-  const effectiveOffset = afterOffset < 0 ? 0 : afterOffset;
   const sliced = maxLines
     ? rawLines.slice(effectiveOffset, effectiveOffset + maxLines)
     : rawLines.slice(effectiveOffset);
