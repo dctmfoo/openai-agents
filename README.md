@@ -108,6 +108,7 @@ Scope IDs follow the pattern `telegram:dm:<memberId>` or `telegram:parents_group
 - [Policies](docs/05-policies.md)
 - [Tools](docs/12-tools.md)
 - [Semantic indexing strategy](docs/13-semantic-indexing-strategy.md)
+- [OpenAI file search + Telegram upload plan](docs/14-openai-file-search-telegram-upload-plan.md)
 - [Troubleshooting](docs/11-troubleshooting.md)
 - [Smoke tests](docs/10-smoke-tests.md)
 
