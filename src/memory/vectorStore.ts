@@ -49,7 +49,7 @@ export type ChunkInsertInput = {
 type SqliteStatement = {
   get: (...params: any[]) => any;
   all: (...params: any[]) => any[];
-  run: (...params: any[]) => { lastInsertRowid?: number };
+  run: (...params: any[]) => { lastInsertRowid?: number; changes?: number };
 };
 
 type SqliteDb = {
@@ -380,12 +380,13 @@ export class VectorStore {
         this.embedding.dimensions,
         serializeEmbedding(chunk.embedding),
       );
-      const rowid = Number(result.lastInsertRowid);
+      const inserted = Number(result.changes ?? 0) > 0;
+      const rowid = Number(result.lastInsertRowid ?? 0);
       const existing = lookupByChunkId.get(chunk.chunkId);
       const chunkIdx = Number(existing?.chunkIdx ?? rowid);
       ids.push(chunkIdx);
 
-      if (rowid > 0 && existing && Number(existing.chunkIdx) === rowid) {
+      if (inserted) {
         insertFts.run(chunkIdx, chunk.content, chunk.path);
         insertVec.run(BigInt(chunkIdx), serializeEmbedding(chunk.embedding));
       }
