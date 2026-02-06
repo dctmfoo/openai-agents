@@ -5,9 +5,11 @@ import path from 'node:path';
 import { createTelegramAdapter } from './bot.js';
 import { getHaloHome } from '../../runtime/haloHome.js';
 import { loadHaloConfig } from '../../runtime/haloConfig.js';
+import { loadFamilyConfig } from '../../runtime/familyConfig.js';
 import { reportStartupError } from '../../runtime/startupErrors.js';
 import { SessionStore } from '../../sessions/sessionStore.js';
 import { createSemanticSyncScheduler } from '../../memory/semanticSyncScheduler.js';
+import { createFileMemoryRetentionScheduler } from '../../files/fileMemoryRetentionScheduler.js';
 
 const haloHome = getHaloHome(process.env);
 const logDir = process.env.LOG_DIR || path.join(haloHome, 'logs');
@@ -38,11 +40,28 @@ const start = async () => {
     semanticConfig: haloConfig.semanticMemory,
   });
 
+  let memberRolesById: Record<string, 'parent' | 'child'> = {};
+  try {
+    const family = await loadFamilyConfig({ haloHome });
+    memberRolesById = Object.fromEntries(
+      family.members.map((member) => [member.memberId, member.role]),
+    );
+  } catch {
+    memberRolesById = {};
+  }
+
+  const fileRetention = createFileMemoryRetentionScheduler({
+    rootDir: haloHome,
+    fileMemoryConfig: haloConfig.fileMemory,
+    memberRolesById,
+  });
+
   const adapter = createTelegramAdapter({
     token,
     logDir,
     rootDir,
     haloHome,
+    fileMemory: haloConfig.fileMemory,
     deps: {
       runPrime: (input, opts) => {
         return import('../../prime/prime.js').then(({ runPrime }) =>
@@ -56,12 +75,14 @@ const start = async () => {
   });
 
   semanticSync.start();
+  fileRetention.start();
 
   console.log('halo (telegram) starting…');
   try {
     await adapter.start();
   } finally {
     semanticSync.stop();
+    fileRetention.stop();
   }
 };
 

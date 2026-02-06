@@ -20,6 +20,10 @@ export type PrimeRunOptions = {
   role?: 'parent' | 'child';
   ageGroup?: 'child' | 'teen' | 'young_adult';
   scopeType?: 'dm' | 'parents_group';
+  fileSearchEnabled?: boolean;
+  fileSearchVectorStoreId?: string;
+  fileSearchIncludeResults?: boolean;
+  fileSearchMaxNumResults?: number;
 };
 
 const buildToolInstructions = (toolNames: string[]) => {
@@ -46,6 +50,12 @@ const buildToolInstructions = (toolNames: string[]) => {
   if (toolNames.includes(TOOL_NAMES.semanticSearch)) {
     instructions.push(
       'To search scoped memory semantically, call semantic_search with a short query.',
+    );
+  }
+
+  if (toolNames.includes(TOOL_NAMES.fileSearch)) {
+    instructions.push(
+      'Use file_search for questions about uploaded documents. Use semantic_search for chat-memory recall.',
     );
   }
 
@@ -147,6 +157,10 @@ export async function runPrime(input: string, opts: PrimeRunOptions = {}) {
     role,
     ageGroup: opts.ageGroup,
     scopeType,
+    fileSearchEnabled: opts.fileSearchEnabled,
+    fileSearchVectorStoreId: opts.fileSearchVectorStoreId,
+    fileSearchIncludeResults: opts.fileSearchIncludeResults,
+    fileSearchMaxNumResults: opts.fileSearchMaxNumResults,
   };
 
   const agent = await makePrimeAgent(context);

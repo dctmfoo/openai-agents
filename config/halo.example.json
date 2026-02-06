@@ -30,5 +30,28 @@
       "textWeight": 0.3,
       "minScore": 0.005
     }
+  },
+  "fileMemory": {
+    "enabled": false,
+    "uploadEnabled": false,
+    "maxFileSizeMb": 20,
+    "allowedExtensions": ["pdf", "txt", "md", "docx", "pptx", "csv", "json", "html"],
+    "maxFilesPerScope": 200,
+    "pollIntervalMs": 1500,
+    "includeSearchResults": false,
+    "maxNumResults": 5,
+    "retention": {
+      "enabled": false,
+      "maxAgeDays": 30,
+      "runIntervalMinutes": 360,
+      "deleteOpenAIFiles": false,
+      "maxFilesPerRun": 25,
+      "dryRun": false,
+      "keepRecentPerScope": 2,
+      "maxDeletesPerScopePerRun": 10,
+      "allowScopeIds": [],
+      "denyScopeIds": [],
+      "policyPreset": "exclude_children"
+    }
   }
 }

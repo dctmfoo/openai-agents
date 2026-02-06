@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { AgentInputItem } from '@openai/agents';
 
 import { buildHaloHomePaths, createStatusHandler } from './admin.js';
@@ -7,6 +7,11 @@ import { mkdtemp, mkdir, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { hashSessionId } from '../sessions/sessionHash.js';
+import {
+  readScopeFileRegistry,
+  setScopeVectorStoreId,
+  upsertScopeFileRecord,
+} from '../files/scopeFileRegistry.js';
 
 type MockResponse = {
   statusCode: number;
@@ -84,6 +89,27 @@ const writeFamilyConfig = async (rootDir: string) => {
   };
   await writeFile(path.join(configDir, 'family.json'), JSON.stringify(payload), 'utf8');
   return payload;
+};
+
+const seedScopeFileRegistry = async (rootDir: string, scopeId: string) => {
+  await setScopeVectorStoreId({ rootDir, scopeId }, 'vs_1', 100);
+  await upsertScopeFileRecord(
+    { rootDir, scopeId },
+    {
+      telegramFileId: 'telegram-file-1',
+      telegramFileUniqueId: 'telegram-unique-1',
+      filename: 'report.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 123,
+      openaiFileId: 'file_1',
+      vectorStoreFileId: '',
+      status: 'completed',
+      lastError: null,
+      uploadedBy: 'wags',
+      uploadedAtMs: 100,
+    },
+    100,
+  );
 };
 
 describe('gateway status handler', () => {
@@ -183,6 +209,301 @@ describe('gateway status handler', () => {
     expect(payload.semanticSync?.enabled).toBe(true);
     expect(payload.semanticSync?.intervalMinutes).toBe(15);
     expect(payload.semanticSync?.totalRuns).toBe(3);
+  });
+
+  it('includes file retention status in /status when provided', async () => {
+    const store = await makeSessionStore();
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: '1.2.3',
+      haloHome: buildHaloHomePaths('/halo'),
+      sessionStore: store,
+      fileRetentionStatusProvider: () => ({
+        enabled: true,
+        intervalMinutes: 60,
+        maxAgeDays: 30,
+        deleteOpenAIFiles: false,
+        maxFilesPerRun: 25,
+        dryRun: false,
+        keepRecentPerScope: 0,
+        maxDeletesPerScopePerRun: 10,
+        allowScopeIds: [],
+        denyScopeIds: [],
+        policyPreset: 'all',
+        running: false,
+        lastRunStartedAtMs: 100,
+        lastRunFinishedAtMs: 101,
+        lastSuccessAtMs: 101,
+        totalRuns: 2,
+        totalDeleted: 3,
+        totalFailures: 1,
+        lastError: {
+          scopeId: 'telegram:dm:wags',
+          fileRef: 'telegram-unique-1',
+          message: 'boom',
+          atMs: 99,
+        },
+        lastRunSummary: {
+          scopeCount: 1,
+          staleCount: 2,
+          candidateCount: 2,
+          attemptedCount: 2,
+          deletedCount: 1,
+          failedCount: 1,
+          dryRun: false,
+          skippedDryRunCount: 0,
+          skippedInProgressCount: 0,
+          protectedRecentCount: 0,
+          deferredByRunCapCount: 0,
+          deferredByScopeCapCount: 0,
+          excludedByAllowCount: 0,
+          excludedByDenyCount: 0,
+          excludedByPresetCount: 0,
+          excludedByUploaderCount: 0,
+          excludedByTypeCount: 0,
+          excludedByDateCount: 0,
+          filters: {
+            uploadedBy: [],
+            extensions: [],
+            mimePrefixes: [],
+            uploadedAfterMs: null,
+            uploadedBeforeMs: null,
+          },
+        },
+      }),
+    });
+
+    const res = makeMockResponse();
+    await handler({ method: 'GET', url: '/status' }, res);
+
+    const payload = JSON.parse(res.body) as {
+      fileRetention?: {
+        enabled?: boolean;
+        intervalMinutes?: number | null;
+        totalDeleted?: number;
+        lastRunSummary?: { candidateCount?: number };
+      };
+    };
+
+    expect(payload.fileRetention?.enabled).toBe(true);
+    expect(payload.fileRetention?.intervalMinutes).toBe(60);
+    expect(payload.fileRetention?.totalDeleted).toBe(3);
+    expect(payload.fileRetention?.lastRunSummary?.candidateCount).toBe(2);
+  });
+
+  it('triggers file retention run for /file-retention/run', async () => {
+    const store = await makeSessionStore();
+    const runFileRetentionNow = vi.fn().mockResolvedValue(undefined);
+
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: '1.2.3',
+      haloHome: buildHaloHomePaths('/halo'),
+      sessionStore: store,
+      config: {
+        fileMemory: {
+          enabled: true,
+          retention: {
+            enabled: true,
+            dryRun: false,
+          },
+        },
+      },
+      runFileRetentionNow,
+      fileRetentionStatusProvider: () => ({
+        enabled: true,
+        intervalMinutes: 60,
+        maxAgeDays: 30,
+        deleteOpenAIFiles: false,
+        maxFilesPerRun: 25,
+        dryRun: false,
+        keepRecentPerScope: 0,
+        maxDeletesPerScopePerRun: 10,
+        allowScopeIds: [],
+        denyScopeIds: [],
+        policyPreset: 'all',
+        running: false,
+        lastRunStartedAtMs: 100,
+        lastRunFinishedAtMs: 101,
+        lastSuccessAtMs: 101,
+        totalRuns: 1,
+        totalDeleted: 0,
+        totalFailures: 0,
+        lastError: null,
+        lastRunSummary: {
+          scopeCount: 1,
+          staleCount: 1,
+          candidateCount: 1,
+          attemptedCount: 1,
+          deletedCount: 1,
+          failedCount: 0,
+          dryRun: false,
+          skippedDryRunCount: 0,
+          skippedInProgressCount: 0,
+          protectedRecentCount: 0,
+          deferredByRunCapCount: 0,
+          deferredByScopeCapCount: 0,
+          excludedByAllowCount: 0,
+          excludedByDenyCount: 0,
+          excludedByPresetCount: 0,
+          excludedByUploaderCount: 0,
+          excludedByTypeCount: 0,
+          excludedByDateCount: 0,
+          filters: {
+            uploadedBy: [],
+            extensions: [],
+            mimePrefixes: [],
+            uploadedAfterMs: null,
+            uploadedBeforeMs: null,
+          },
+        },
+      }),
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'POST',
+        url: '/file-retention/run?scopeId=telegram%3Adm%3Awags&dryRun=1',
+        socket: { remoteAddress: '127.0.0.1' },
+      },
+      res,
+    );
+
+    expect(runFileRetentionNow).toHaveBeenCalledWith({
+      scopeId: 'telegram:dm:wags',
+      dryRun: true,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toMatchObject({
+      ok: true,
+      requested: {
+        scopeId: 'telegram:dm:wags',
+        dryRun: true,
+      },
+    });
+  });
+
+  it('passes metadata filters to file retention manual runs', async () => {
+    const store = await makeSessionStore();
+    const runFileRetentionNow = vi.fn().mockResolvedValue(undefined);
+
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: '1.2.3',
+      haloHome: buildHaloHomePaths('/halo'),
+      sessionStore: store,
+      config: {
+        fileMemory: {
+          enabled: true,
+          retention: {
+            enabled: true,
+            dryRun: false,
+          },
+        },
+      },
+      runFileRetentionNow,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'POST',
+        url: '/file-retention/run?uploadedBy=wags,kid&extensions=.pdf,txt&mimePrefixes=application/pdf,text/&uploadedAfterMs=10&uploadedBeforeMs=20',
+        socket: { remoteAddress: '127.0.0.1' },
+      },
+      res,
+    );
+
+    expect(runFileRetentionNow).toHaveBeenCalledWith({
+      scopeId: undefined,
+      dryRun: false,
+      uploadedBy: ['wags', 'kid'],
+      extensions: ['.pdf', 'txt'],
+      mimePrefixes: ['application/pdf', 'text/'],
+      uploadedAfterMs: 10,
+      uploadedBeforeMs: 20,
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('rejects non-local file retention runs', async () => {
+    const store = await makeSessionStore();
+    const runFileRetentionNow = vi.fn().mockResolvedValue(undefined);
+
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: '1.2.3',
+      haloHome: buildHaloHomePaths('/halo'),
+      sessionStore: store,
+      config: {
+        fileMemory: {
+          enabled: true,
+          retention: {
+            enabled: true,
+          },
+        },
+      },
+      runFileRetentionNow,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'POST',
+        url: '/file-retention/run',
+        socket: { remoteAddress: '203.0.113.1' },
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(403);
+    expect(runFileRetentionNow).not.toHaveBeenCalled();
+  });
+
+  it('returns 409 when file retention is disabled for manual run endpoint', async () => {
+    const store = await makeSessionStore();
+    const runFileRetentionNow = vi.fn().mockResolvedValue(undefined);
+
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: '1.2.3',
+      haloHome: buildHaloHomePaths('/halo'),
+      sessionStore: store,
+      config: {
+        fileMemory: {
+          enabled: true,
+          retention: {
+            enabled: false,
+          },
+        },
+      },
+      runFileRetentionNow,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'POST',
+        url: '/file-retention/run',
+        socket: { remoteAddress: '127.0.0.1' },
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(409);
+    expect(JSON.parse(res.body)).toEqual({ error: 'file_retention_disabled' });
+    expect(runFileRetentionNow).not.toHaveBeenCalled();
   });
 
   it('returns scope ids for /sessions', async () => {
@@ -757,6 +1078,178 @@ describe('gateway status handler', () => {
 
     expect(res.statusCode).toBe(403);
     expect(JSON.parse(res.body)).toEqual({ error: 'forbidden' });
+  });
+
+  it('lists file-memory files for /sessions/:scopeId/files', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    const scopeId = 'telegram:dm:wags';
+    await seedScopeFileRegistry(haloHome, scopeId);
+    const store = await makeSessionStore(haloHome);
+
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+      config: {
+        fileMemory: {
+          enabled: true,
+        },
+      },
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'GET',
+        url: `/sessions/${encodeURIComponent(scopeId)}/files`,
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(200);
+    const payload = JSON.parse(res.body) as {
+      scopeId: string;
+      vectorStoreId: string | null;
+      files: Array<{ telegramFileUniqueId: string }>;
+    };
+    expect(payload.scopeId).toBe(scopeId);
+    expect(payload.vectorStoreId).toBe('vs_1');
+    expect(payload.files).toHaveLength(1);
+    expect(payload.files[0]?.telegramFileUniqueId).toBe('telegram-unique-1');
+  });
+
+  it('deletes a file-memory file for /sessions/:scopeId/files/:fileRef/delete', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    const scopeId = 'telegram:dm:wags';
+    await seedScopeFileRegistry(haloHome, scopeId);
+    const store = await makeSessionStore(haloHome);
+
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+      config: {
+        fileMemory: {
+          enabled: true,
+        },
+      },
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'POST',
+        url: `/sessions/${encodeURIComponent(scopeId)}/files/telegram-unique-1/delete?deleteOpenAIFile=0`,
+        socket: { remoteAddress: '127.0.0.1' },
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toMatchObject({
+      ok: true,
+      deleted: true,
+    });
+
+    const registry = await readScopeFileRegistry({ rootDir: haloHome, scopeId });
+    expect(registry?.files).toHaveLength(0);
+  });
+
+  it('purges file-memory files for /sessions/:scopeId/files/purge', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    const scopeId = 'telegram:dm:wags';
+    await seedScopeFileRegistry(haloHome, scopeId);
+    await upsertScopeFileRecord(
+      { rootDir: haloHome, scopeId },
+      {
+        telegramFileId: 'telegram-file-2',
+        telegramFileUniqueId: 'telegram-unique-2',
+        filename: 'notes.pdf',
+        mimeType: 'application/pdf',
+        sizeBytes: 123,
+        openaiFileId: 'file_2',
+        vectorStoreFileId: '',
+        status: 'completed',
+        lastError: null,
+        uploadedBy: 'wags',
+        uploadedAtMs: 101,
+      },
+      101,
+    );
+
+    const store = await makeSessionStore(haloHome);
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+      config: {
+        fileMemory: {
+          enabled: true,
+        },
+      },
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'POST',
+        url: `/sessions/${encodeURIComponent(scopeId)}/files/purge?deleteOpenAIFiles=0`,
+        socket: { remoteAddress: '127.0.0.1' },
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toMatchObject({
+      ok: true,
+      removedCount: 2,
+      remainingCount: 0,
+    });
+
+    const registry = await readScopeFileRegistry({ rootDir: haloHome, scopeId });
+    expect(registry?.files).toHaveLength(0);
+  });
+
+  it('returns 409 when file memory is disabled for file endpoints', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    const scopeId = 'telegram:dm:wags';
+    await seedScopeFileRegistry(haloHome, scopeId);
+    const store = await makeSessionStore(haloHome);
+
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+      config: {
+        fileMemory: {
+          enabled: false,
+        },
+      },
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'GET',
+        url: `/sessions/${encodeURIComponent(scopeId)}/files`,
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(409);
+    expect(JSON.parse(res.body)).toEqual({ error: 'file_memory_disabled' });
   });
 
   it('purges session data for /sessions/:scopeId/purge', async () => {

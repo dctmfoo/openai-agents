@@ -19,19 +19,26 @@ const PARENT_ALLOWLIST: Record<ScopeType, ToolName[]> = {
     TOOL_NAMES.readScopedMemory,
     TOOL_NAMES.rememberDaily,
     TOOL_NAMES.semanticSearch,
+    TOOL_NAMES.fileSearch,
     TOOL_NAMES.webSearch,
   ],
   parents_group: [
     TOOL_NAMES.readScopedMemory,
     TOOL_NAMES.rememberDaily,
     TOOL_NAMES.semanticSearch,
+    TOOL_NAMES.fileSearch,
     TOOL_NAMES.webSearch,
   ],
 };
 
 const CHILD_ALLOWLIST: Record<AgeGroup, Record<ScopeType, ToolName[]>> = {
   child: {
-    dm: [TOOL_NAMES.readScopedMemory, TOOL_NAMES.rememberDaily, TOOL_NAMES.semanticSearch],
+    dm: [
+      TOOL_NAMES.readScopedMemory,
+      TOOL_NAMES.rememberDaily,
+      TOOL_NAMES.semanticSearch,
+      TOOL_NAMES.fileSearch,
+    ],
     parents_group: [],
   },
   teen: {
@@ -39,6 +46,7 @@ const CHILD_ALLOWLIST: Record<AgeGroup, Record<ScopeType, ToolName[]>> = {
       TOOL_NAMES.readScopedMemory,
       TOOL_NAMES.rememberDaily,
       TOOL_NAMES.semanticSearch,
+      TOOL_NAMES.fileSearch,
       TOOL_NAMES.webSearch,
     ],
     parents_group: [],
@@ -48,6 +56,7 @@ const CHILD_ALLOWLIST: Record<AgeGroup, Record<ScopeType, ToolName[]>> = {
       TOOL_NAMES.readScopedMemory,
       TOOL_NAMES.rememberDaily,
       TOOL_NAMES.semanticSearch,
+      TOOL_NAMES.fileSearch,
       TOOL_NAMES.webSearch,
     ],
     parents_group: [],

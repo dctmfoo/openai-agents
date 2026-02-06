@@ -97,8 +97,9 @@ Current sync strategy combines two ingestion paths:
 
 Runtime behavior:
 - Gateway/telegram runtime starts a background scheduler (`semanticMemory.syncIntervalMinutes`) for active scopes.
-- `/status` includes scheduler health (runs, failures, last success/error).
-- Admin UI shows this snapshot in a dedicated semantic sync status card.
+- Optional file-retention scheduler runs stale uploaded-file cleanup (`fileMemory.retention.*`) when enabled, including role-aware policy presets and scope allow/deny filters. Manual runs can further filter by uploader/date/type metadata.
+- `/status` includes scheduler health snapshots (semantic sync + file retention).
+- Admin UI shows semantic sync status; file-retention snapshot is now exposed in the status payload for operational visibility.
 
 ## 6) Memory distillation (durable vs temporal)
 
@@ -140,7 +141,7 @@ Default gateway base is `http://127.0.0.1:8787` (override with `?gateway=` in th
 ### Public endpoints (any client)
 
 - `GET /healthz` — lightweight health check, returns `{ ok: true }`
-- `GET /status` — uptime, version, haloHome paths, config snapshot, semantic sync scheduler status
+- `GET /status` — uptime, version, haloHome paths, config snapshot, semantic sync scheduler status, file-retention scheduler status
 - `GET /sessions` — scope id strings (legacy shape)
 - `GET /sessions-with-counts` — `{ scopeId, itemCount }` objects
 - `GET /policy/status` — per-scope allow/deny decisions (with reasons)
@@ -150,6 +151,10 @@ Default gateway base is `http://127.0.0.1:8787` (override with `?gateway=` in th
 - `POST /sessions/:scopeId/clear` — clears derived session state (keeps transcript)
 - `POST /sessions/:scopeId/distill` — triggers deterministic distillation for scope (fails if `distillationEnabled: false`)
 - `POST /sessions/:scopeId/purge?confirm=:scopeId` — deletes session + transcript (loopback-only + explicit confirm)
+- `GET /sessions/:scopeId/files` — list scoped file-memory entries and vector-store binding (requires `fileMemory.enabled=true`)
+- `POST /sessions/:scopeId/files/:fileRef/delete?deleteOpenAIFile=0|1` — remove one uploaded file from scope memory (loopback-only)
+- `POST /sessions/:scopeId/files/purge?deleteOpenAIFiles=0|1` — purge scoped uploaded files (loopback-only)
+- `POST /file-retention/run?scopeId=...&dryRun=0|1` — trigger retention run on-demand (loopback-only)
 
 ### Loopback-only diagnostics (127.0.0.1 only)
 

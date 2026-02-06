@@ -2,6 +2,8 @@ import { createTelegramAdapter } from '../interfaces/telegram/bot.js';
 import { resolveVersion, startAdminServer } from './admin.js';
 import { defaultSessionStore, SessionStore } from '../sessions/sessionStore.js';
 import { createSemanticSyncScheduler } from '../memory/semanticSyncScheduler.js';
+import { createFileMemoryRetentionScheduler } from '../files/fileMemoryRetentionScheduler.js';
+import { loadFamilyConfig } from '../runtime/familyConfig.js';
 
 export type GatewayOptions = {
   telegram?: {
@@ -45,6 +47,29 @@ export type GatewayOptions = {
         minScore?: number;
       };
     };
+    fileMemory?: {
+      enabled?: boolean;
+      uploadEnabled?: boolean;
+      maxFileSizeMb?: number;
+      allowedExtensions?: string[];
+      maxFilesPerScope?: number;
+      pollIntervalMs?: number;
+      includeSearchResults?: boolean;
+      maxNumResults?: number;
+      retention?: {
+        enabled?: boolean;
+        maxAgeDays?: number;
+        runIntervalMinutes?: number;
+        deleteOpenAIFiles?: boolean;
+        maxFilesPerRun?: number;
+        dryRun?: boolean;
+        keepRecentPerScope?: number;
+        maxDeletesPerScopePerRun?: number;
+        allowScopeIds?: string[];
+        denyScopeIds?: string[];
+        policyPreset?: 'all' | 'parents_only' | 'exclude_children' | 'custom';
+      };
+    };
   };
 };
 
@@ -80,6 +105,37 @@ export async function startGateway(options: GatewayOptions) {
     token: telegramConfig.token,
     logDir: telegramConfig.logDir,
     rootDir: telegramConfig.rootDir,
+    fileMemory: {
+      enabled: options.config?.fileMemory?.enabled ?? false,
+      uploadEnabled: options.config?.fileMemory?.uploadEnabled ?? false,
+      maxFileSizeMb: options.config?.fileMemory?.maxFileSizeMb ?? 20,
+      allowedExtensions: options.config?.fileMemory?.allowedExtensions ?? ['pdf', 'txt', 'md', 'docx', 'pptx', 'csv', 'json', 'html'],
+      maxFilesPerScope: options.config?.fileMemory?.maxFilesPerScope ?? 200,
+      pollIntervalMs: options.config?.fileMemory?.pollIntervalMs ?? 1500,
+      includeSearchResults: options.config?.fileMemory?.includeSearchResults ?? false,
+      maxNumResults: options.config?.fileMemory?.maxNumResults ?? 5,
+      retention: {
+        enabled: options.config?.fileMemory?.retention?.enabled ?? false,
+        maxAgeDays: options.config?.fileMemory?.retention?.maxAgeDays ?? 30,
+        runIntervalMinutes:
+          options.config?.fileMemory?.retention?.runIntervalMinutes ?? 360,
+        deleteOpenAIFiles:
+          options.config?.fileMemory?.retention?.deleteOpenAIFiles ?? false,
+        maxFilesPerRun:
+          options.config?.fileMemory?.retention?.maxFilesPerRun ?? 25,
+        dryRun: options.config?.fileMemory?.retention?.dryRun ?? false,
+        keepRecentPerScope:
+          options.config?.fileMemory?.retention?.keepRecentPerScope ?? 2,
+        maxDeletesPerScopePerRun:
+          options.config?.fileMemory?.retention?.maxDeletesPerScopePerRun ?? 10,
+        allowScopeIds:
+          options.config?.fileMemory?.retention?.allowScopeIds ?? [],
+        denyScopeIds:
+          options.config?.fileMemory?.retention?.denyScopeIds ?? [],
+        policyPreset:
+          options.config?.fileMemory?.retention?.policyPreset ?? 'exclude_children',
+      },
+    },
     deps: {
       runPrime: (input, opts) => {
         return import('../prime/prime.js').then(({ runPrime }) =>
@@ -103,6 +159,22 @@ export async function startGateway(options: GatewayOptions) {
     semanticConfig: options.config?.semanticMemory,
   });
 
+  let memberRolesById: Record<string, 'parent' | 'child'> = {};
+  try {
+    const family = await loadFamilyConfig({ haloHome });
+    memberRolesById = Object.fromEntries(
+      family.members.map((member) => [member.memberId, member.role]),
+    );
+  } catch {
+    memberRolesById = {};
+  }
+
+  const fileRetention = createFileMemoryRetentionScheduler({
+    rootDir: haloHome,
+    fileMemoryConfig: options.config?.fileMemory,
+    memberRolesById,
+  });
+
   const admin = await startAdminServer({
     host: adminHost,
     port: adminPort,
@@ -111,15 +183,19 @@ export async function startGateway(options: GatewayOptions) {
     sessionStore,
     config: options.config,
     semanticSyncStatusProvider: semanticSync.getStatus,
+    fileRetentionStatusProvider: fileRetention.getStatus,
+    runFileRetentionNow: fileRetention.runNow,
     startedAtMs: options.admin?.startedAtMs,
   });
 
   semanticSync.start();
+  fileRetention.start();
 
   try {
     await telegram.start();
   } finally {
     semanticSync.stop();
+    fileRetention.stop();
   }
 
   return { telegram, admin };

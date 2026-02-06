@@ -71,6 +71,29 @@ Notes:
       "textWeight": 0.3,
       "minScore": 0.005
     }
+  },
+  "fileMemory": {
+    "enabled": false,
+    "uploadEnabled": false,
+    "maxFileSizeMb": 20,
+    "allowedExtensions": ["pdf", "txt", "md", "docx", "pptx", "csv", "json", "html"],
+    "maxFilesPerScope": 200,
+    "pollIntervalMs": 1500,
+    "includeSearchResults": false,
+    "maxNumResults": 5,
+    "retention": {
+      "enabled": false,
+      "maxAgeDays": 30,
+      "runIntervalMinutes": 360,
+      "deleteOpenAIFiles": false,
+      "maxFilesPerRun": 25,
+      "dryRun": false,
+      "keepRecentPerScope": 2,
+      "maxDeletesPerScopePerRun": 10,
+      "allowScopeIds": [],
+      "denyScopeIds": [],
+      "policyPreset": "exclude_children"
+    }
   }
 }
 ```
@@ -116,6 +139,35 @@ Requirements:
 - `SQLITE_VEC_EXT` (or `vecExtensionPath`) must point to the sqlite-vec extension.
 - `OPENAI_API_KEY` is required for OpenAI embeddings.
 - `GEMINI_API_KEY` is required for Gemini embeddings.
+
+### fileMemory
+
+- `enabled`: enables scoped file-memory behavior and file-search tool wiring.
+- `uploadEnabled`: enables Telegram document upload ingestion.
+- `maxFileSizeMb`: per-file upload limit.
+- `allowedExtensions`: upload allowlist by extension.
+- `maxFilesPerScope`: hard cap on uploaded files tracked per scope.
+- `pollIntervalMs`: polling interval for OpenAI vector-store indexing status.
+- `includeSearchResults`: controls hosted `file_search` tool result inclusion.
+- `maxNumResults`: max results returned by hosted `file_search`.
+- `retention.enabled`: enables background retention cleanup for stale uploaded files.
+- `retention.maxAgeDays`: file age threshold for cleanup candidates.
+- `retention.runIntervalMinutes`: background cleanup cadence.
+- `retention.deleteOpenAIFiles`: when `true`, also deletes underlying OpenAI File objects.
+- `retention.maxFilesPerRun`: safety cap on deletions per cleanup run.
+- `retention.dryRun`: computes retention candidates without deleting files.
+- `retention.keepRecentPerScope`: protects the newest N files per scope from retention deletes (default: `2`).
+- `retention.maxDeletesPerScopePerRun`: per-scope deletion cap for each retention run.
+- `retention.allowScopeIds`: optional allowlist; when set, retention runs only for these scopes.
+- `retention.denyScopeIds`: denylist; these scopes are never touched by retention (deny wins over allow).
+- `retention.policyPreset`: quick policy mode — `all`, `parents_only`, `exclude_children`, or `custom` (default: `exclude_children`).
+
+Notes:
+- `parents_only` keeps retention to parent DM scopes + parents-group scope (requires valid family member roles in `family.json`).
+- `exclude_children` skips child DM scopes, while still allowing unknown DM scopes.
+- `custom` is intended for explicit `allowScopeIds` / `denyScopeIds` control.
+- Filter precedence: `denyScopeIds` → `allowScopeIds` (if set) → `policyPreset`.
+- Manual retention runs (`POST /file-retention/run`) support additional ad-hoc metadata filters: `uploadedBy`, `extensions`, `mimePrefixes`, `uploadedAfterMs`, `uploadedBeforeMs`.
 
 ## family.json structure
 

@@ -5,4 +5,8 @@ export type PrimeContext = ToolPolicyContext & {
   scopeId: string;
   channel?: 'telegram' | 'cli';
   ageGroup?: 'child' | 'teen' | 'young_adult';
+  fileSearchEnabled?: boolean;
+  fileSearchVectorStoreId?: string;
+  fileSearchIncludeResults?: boolean;
+  fileSearchMaxNumResults?: number;
 };

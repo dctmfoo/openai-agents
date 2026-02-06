@@ -8,6 +8,81 @@ import { FAMILY_CONFIG_SCHEMA } from './familyConfig.js';
 
 const HALO_CONFIG_SCHEMA_VERSION = 1;
 
+const FILE_MEMORY_RETENTION_SCHEMA = z
+  .object({
+    enabled: z.boolean().default(false),
+    maxAgeDays: z.number().int().positive().default(30),
+    runIntervalMinutes: z.number().int().positive().default(360),
+    deleteOpenAIFiles: z.boolean().default(false),
+    maxFilesPerRun: z.number().int().positive().default(25),
+    dryRun: z.boolean().default(false),
+    keepRecentPerScope: z.number().int().min(0).default(2),
+    maxDeletesPerScopePerRun: z.number().int().positive().default(10),
+    allowScopeIds: z.array(z.string().min(1)).default([]),
+    denyScopeIds: z.array(z.string().min(1)).default([]),
+    policyPreset: z
+      .enum(['all', 'parents_only', 'exclude_children', 'custom'])
+      .default('exclude_children'),
+  })
+  .default({
+    enabled: false,
+    maxAgeDays: 30,
+    runIntervalMinutes: 360,
+    deleteOpenAIFiles: false,
+    maxFilesPerRun: 25,
+    dryRun: false,
+    keepRecentPerScope: 2,
+    maxDeletesPerScopePerRun: 10,
+    allowScopeIds: [],
+    denyScopeIds: [],
+    policyPreset: 'exclude_children',
+  });
+
+const FILE_MEMORY_CONFIG_SCHEMA = z
+  .object({
+    enabled: z.boolean().default(false),
+    uploadEnabled: z.boolean().default(false),
+    maxFileSizeMb: z.number().int().positive().default(20),
+    allowedExtensions: z.array(z.string()).default([
+      'pdf',
+      'txt',
+      'md',
+      'docx',
+      'pptx',
+      'csv',
+      'json',
+      'html',
+    ]),
+    maxFilesPerScope: z.number().int().positive().default(200),
+    pollIntervalMs: z.number().int().positive().default(1500),
+    includeSearchResults: z.boolean().default(false),
+    maxNumResults: z.number().int().positive().default(5),
+    retention: FILE_MEMORY_RETENTION_SCHEMA,
+  })
+  .default({
+    enabled: false,
+    uploadEnabled: false,
+    maxFileSizeMb: 20,
+    allowedExtensions: ['pdf', 'txt', 'md', 'docx', 'pptx', 'csv', 'json', 'html'],
+    maxFilesPerScope: 200,
+    pollIntervalMs: 1500,
+    includeSearchResults: false,
+    maxNumResults: 5,
+    retention: {
+      enabled: false,
+      maxAgeDays: 30,
+      runIntervalMinutes: 360,
+      deleteOpenAIFiles: false,
+      maxFilesPerRun: 25,
+      dryRun: false,
+      keepRecentPerScope: 2,
+      maxDeletesPerScopePerRun: 10,
+      allowScopeIds: [],
+      denyScopeIds: [],
+      policyPreset: 'exclude_children',
+    },
+  });
+
 const HALO_CONFIG_SCHEMA = z.object({
   schemaVersion: z.literal(HALO_CONFIG_SCHEMA_VERSION),
 
@@ -85,10 +160,13 @@ const HALO_CONFIG_SCHEMA = z.object({
       },
     }),
 
+  fileMemory: FILE_MEMORY_CONFIG_SCHEMA,
+
   family: FAMILY_CONFIG_SCHEMA.optional(),
 });
 
 export type HaloConfig = z.infer<typeof HALO_CONFIG_SCHEMA>;
+export type FileMemoryConfig = HaloConfig['fileMemory'];
 
 function getHaloConfigPath(env: NodeJS.ProcessEnv): string {
   const haloHome = getHaloHome(env);
