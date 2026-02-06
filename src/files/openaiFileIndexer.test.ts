@@ -315,6 +315,109 @@ describe('openaiFileIndexer', () => {
     expect(registry?.vectorStoreId).toBe('vs_1');
   });
 
+  it('persists a failed record with null vectorStoreFileId when indexing throws', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'openai-file-indexer-'));
+    const scopeId = 'telegram:dm:wags';
+
+    const client = {
+      vectorStores: {
+        create: vi.fn().mockResolvedValue({ id: 'vs_1' }),
+        files: {
+          createAndPoll: vi.fn().mockRejectedValue(new Error('indexing failed')),
+        },
+      },
+      files: {
+        create: vi.fn().mockResolvedValue({ id: 'file_1' }),
+      },
+    };
+
+    const result = await indexTelegramDocument(
+      {
+        rootDir,
+        scopeId,
+        uploadedBy: 'wags',
+        telegramFileId: 'telegram-file-1',
+        telegramFileUniqueId: 'telegram-unique-1',
+        filename: 'report.pdf',
+        mimeType: 'application/pdf',
+        sizeBytes: 1024,
+        bytes: new Uint8Array([1, 2, 3]),
+        maxFilesPerScope: 200,
+        pollIntervalMs: 1500,
+      },
+      {
+        client,
+        toFile: vi.fn().mockResolvedValue({}),
+      },
+    );
+
+    expect(result).toEqual({ ok: false, message: 'indexing failed' });
+
+    const registry = await readScopeFileRegistry({ rootDir, scopeId });
+    expect(registry?.files).toHaveLength(1);
+    expect(registry?.files[0]).toMatchObject({
+      telegramFileUniqueId: 'telegram-unique-1',
+      openaiFileId: 'file_1',
+      vectorStoreFileId: null,
+      status: 'failed',
+      lastError: 'indexing failed',
+    });
+  });
+
+  it('marks indexing as failed when completed status misses vectorStoreFileId', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'openai-file-indexer-'));
+    const scopeId = 'telegram:dm:wags';
+
+    const client = {
+      vectorStores: {
+        create: vi.fn().mockResolvedValue({ id: 'vs_1' }),
+        files: {
+          createAndPoll: vi.fn().mockResolvedValue({
+            id: '',
+            status: 'completed',
+            last_error: null,
+          }),
+        },
+      },
+      files: {
+        create: vi.fn().mockResolvedValue({ id: 'file_1' }),
+      },
+    };
+
+    const result = await indexTelegramDocument(
+      {
+        rootDir,
+        scopeId,
+        uploadedBy: 'wags',
+        telegramFileId: 'telegram-file-1',
+        telegramFileUniqueId: 'telegram-unique-1',
+        filename: 'report.pdf',
+        mimeType: 'application/pdf',
+        sizeBytes: 1024,
+        bytes: new Uint8Array([1, 2, 3]),
+        maxFilesPerScope: 200,
+        pollIntervalMs: 1500,
+      },
+      {
+        client,
+        toFile: vi.fn().mockResolvedValue({}),
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      message: 'OpenAI indexing completed without a vector-store file id.',
+    });
+
+    const registry = await readScopeFileRegistry({ rootDir, scopeId });
+    expect(registry?.files).toHaveLength(1);
+    expect(registry?.files[0]).toMatchObject({
+      vectorStoreFileId: null,
+      status: 'failed',
+      lastError: 'OpenAI indexing completed without a vector-store file id.',
+    });
+  });
+
   it('fails when max files per scope is reached', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'openai-file-indexer-'));
     const scopeId = 'telegram:dm:wags';

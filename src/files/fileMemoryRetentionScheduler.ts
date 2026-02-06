@@ -236,25 +236,45 @@ const resolveRetentionConfig = (
   };
 };
 
-function isScopeFileRecord(value: unknown): value is ScopeFileRecord {
-  if (!value || typeof value !== 'object') return false;
+function normalizeOptionalId(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function normalizeScopeFileRecord(value: unknown): ScopeFileRecord | null {
+  if (!value || typeof value !== 'object') return null;
 
   const record = value as Partial<ScopeFileRecord>;
-  return (
-    typeof record.telegramFileId === 'string' &&
-    typeof record.telegramFileUniqueId === 'string' &&
-    typeof record.filename === 'string' &&
-    typeof record.mimeType === 'string' &&
-    typeof record.sizeBytes === 'number' &&
-    typeof record.openaiFileId === 'string' &&
-    typeof record.vectorStoreFileId === 'string' &&
-    (record.status === 'in_progress' ||
-      record.status === 'completed' ||
-      record.status === 'failed') &&
-    (record.lastError === null || typeof record.lastError === 'string') &&
-    typeof record.uploadedBy === 'string' &&
-    typeof record.uploadedAtMs === 'number'
-  );
+  if (
+    typeof record.telegramFileId !== 'string' ||
+    typeof record.telegramFileUniqueId !== 'string' ||
+    typeof record.filename !== 'string' ||
+    typeof record.mimeType !== 'string' ||
+    typeof record.sizeBytes !== 'number' ||
+    (record.status !== 'in_progress' &&
+      record.status !== 'completed' &&
+      record.status !== 'failed') ||
+    (record.lastError !== null && typeof record.lastError !== 'string') ||
+    typeof record.uploadedBy !== 'string' ||
+    typeof record.uploadedAtMs !== 'number'
+  ) {
+    return null;
+  }
+
+  return {
+    telegramFileId: record.telegramFileId,
+    telegramFileUniqueId: record.telegramFileUniqueId,
+    filename: record.filename,
+    mimeType: record.mimeType,
+    sizeBytes: record.sizeBytes,
+    openaiFileId: normalizeOptionalId(record.openaiFileId),
+    vectorStoreFileId: normalizeOptionalId(record.vectorStoreFileId),
+    status: record.status,
+    lastError: record.lastError,
+    uploadedBy: record.uploadedBy,
+    uploadedAtMs: record.uploadedAtMs,
+  };
 }
 
 function normalizeScopeFileRegistry(raw: unknown): ScopeFileRegistry | null {
@@ -265,7 +285,9 @@ function normalizeScopeFileRegistry(raw: unknown): ScopeFileRegistry | null {
     return null;
   }
 
-  const files = registry.files.filter(isScopeFileRecord);
+  const files = registry.files
+    .map((file) => normalizeScopeFileRecord(file))
+    .filter((file): file is ScopeFileRecord => Boolean(file));
 
   return {
     scopeId: registry.scopeId,
@@ -617,7 +639,12 @@ export function createFileMemoryRetentionScheduler(
       }));
 
   let intervalHandle: NodeJS.Timeout | null = null;
-  let inFlight: Promise<void> | null = null;
+  let queueDrainPromise: Promise<void> | null = null;
+  const pendingRuns: Array<{
+    options: FileMemoryRetentionRunOptions;
+    resolve: () => void;
+    reject: (err: unknown) => void;
+  }> = [];
 
   const status: InternalStatus = {
     running: false,
@@ -640,128 +667,159 @@ export function createFileMemoryRetentionScheduler(
     };
   };
 
-  const runNow = async (runOptions: FileMemoryRetentionRunOptions = {}): Promise<void> => {
+  const executeRun = async (
+    runOptions: FileMemoryRetentionRunOptions = {},
+  ): Promise<void> => {
     if (!resolved) return;
-    if (inFlight) return inFlight;
 
-    inFlight = (async () => {
-      status.running = true;
-      status.totalRuns += 1;
-      status.lastRunStartedAtMs = nowMs();
+    status.running = true;
+    status.totalRuns += 1;
+    status.lastRunStartedAtMs = nowMs();
 
-      let runFailed = false;
+    let runFailed = false;
 
-      try {
-        const cutoffMs = nowMs() - resolved.maxAgeDays * DAY_MS;
-        const allRegistries = await listScopeRegistries(options.rootDir);
+    try {
+      const cutoffMs = nowMs() - resolved.maxAgeDays * DAY_MS;
+      const allRegistries = await listScopeRegistries(options.rootDir);
 
-        const requestedScopeId = runOptions.scopeId?.trim();
-        const registries = requestedScopeId
-          ? allRegistries.filter((registry) => registry.scopeId === requestedScopeId)
-          : allRegistries;
+      const requestedScopeId = runOptions.scopeId?.trim();
+      const registries = requestedScopeId
+        ? allRegistries.filter((registry) => registry.scopeId === requestedScopeId)
+        : allRegistries;
 
-        const effectiveFilters = normalizeRetentionFilters(runOptions);
+      const effectiveFilters = normalizeRetentionFilters(runOptions);
 
-        const plan = collectRetentionPlan(
-          registries,
-          cutoffMs,
-          resolved,
-          memberRolesById,
-          effectiveFilters,
-        );
+      const plan = collectRetentionPlan(
+        registries,
+        cutoffMs,
+        resolved,
+        memberRolesById,
+        effectiveFilters,
+      );
 
-        const effectiveDryRun = runOptions.dryRun ?? resolved.dryRun;
+      const effectiveDryRun = runOptions.dryRun ?? resolved.dryRun;
 
-        let attemptedCount = 0;
-        let deletedCount = 0;
-        let failedCount = 0;
-        let skippedDryRunCount = 0;
+      let attemptedCount = 0;
+      let deletedCount = 0;
+      let failedCount = 0;
+      let skippedDryRunCount = 0;
 
-        if (effectiveDryRun) {
-          skippedDryRunCount = plan.candidates.length;
-        } else {
-          for (const candidate of plan.candidates) {
-            attemptedCount += 1;
+      if (effectiveDryRun) {
+        skippedDryRunCount = plan.candidates.length;
+      } else {
+        for (const candidate of plan.candidates) {
+          attemptedCount += 1;
 
-            try {
-              const result = await deleteScopedFile({
-                rootDir: options.rootDir,
-                scopeId: candidate.scopeId,
-                fileRef: candidate.fileRef,
-                deleteOpenAIFile: resolved.deleteOpenAIFiles,
-              });
+          try {
+            const result = await deleteScopedFile({
+              rootDir: options.rootDir,
+              scopeId: candidate.scopeId,
+              fileRef: candidate.fileRef,
+              deleteOpenAIFile: resolved.deleteOpenAIFiles,
+            });
 
-              if (!result.ok) {
-                runFailed = true;
-                failedCount += 1;
-                status.totalFailures += 1;
-                setLastError(result.message, candidate.scopeId, candidate.fileRef);
-                continue;
-              }
-
-              deletedCount += 1;
-              status.totalDeleted += 1;
-            } catch (err) {
+            if (!result.ok) {
               runFailed = true;
               failedCount += 1;
               status.totalFailures += 1;
-              setLastError(toErrorMessage(err), candidate.scopeId, candidate.fileRef);
-              logger.error('halo: file retention delete failed', {
-                scopeId: candidate.scopeId,
-                fileRef: candidate.fileRef,
-                error: serializeError(err),
-              });
+              setLastError(result.message, candidate.scopeId, candidate.fileRef);
+              continue;
             }
+
+            deletedCount += 1;
+            status.totalDeleted += 1;
+          } catch (err) {
+            runFailed = true;
+            failedCount += 1;
+            status.totalFailures += 1;
+            setLastError(toErrorMessage(err), candidate.scopeId, candidate.fileRef);
+            logger.error('halo: file retention delete failed', {
+              scopeId: candidate.scopeId,
+              fileRef: candidate.fileRef,
+              error: serializeError(err),
+            });
           }
         }
+      }
 
-        status.lastRunSummary = {
-          scopeCount: plan.scopeCount,
-          staleCount: plan.staleCount,
-          candidateCount: plan.candidates.length,
-          attemptedCount,
-          deletedCount,
-          failedCount,
-          dryRun: effectiveDryRun,
-          skippedDryRunCount,
-          skippedInProgressCount: plan.skippedInProgressCount,
-          protectedRecentCount: plan.protectedRecentCount,
-          deferredByRunCapCount: plan.deferredByRunCapCount,
-          deferredByScopeCapCount: plan.deferredByScopeCapCount,
-          excludedByAllowCount: plan.excludedByAllowCount,
-          excludedByDenyCount: plan.excludedByDenyCount,
-          excludedByPresetCount: plan.excludedByPresetCount,
-          excludedByUploaderCount: plan.excludedByUploaderCount,
-          excludedByTypeCount: plan.excludedByTypeCount,
-          excludedByDateCount: plan.excludedByDateCount,
-          filters: {
-            uploadedBy: [...plan.filters.uploadedBy],
-            extensions: [...plan.filters.extensions],
-            mimePrefixes: [...plan.filters.mimePrefixes],
-            uploadedAfterMs: plan.filters.uploadedAfterMs,
-            uploadedBeforeMs: plan.filters.uploadedBeforeMs,
-          },
-        };
-      } catch (err) {
-        runFailed = true;
-        status.totalFailures += 1;
-        setLastError(toErrorMessage(err));
-        logger.error('halo: file retention run failed', {
-          error: serializeError(err),
-        });
-      } finally {
-        if (!runFailed) {
-          status.lastSuccessAtMs = nowMs();
+      status.lastRunSummary = {
+        scopeCount: plan.scopeCount,
+        staleCount: plan.staleCount,
+        candidateCount: plan.candidates.length,
+        attemptedCount,
+        deletedCount,
+        failedCount,
+        dryRun: effectiveDryRun,
+        skippedDryRunCount,
+        skippedInProgressCount: plan.skippedInProgressCount,
+        protectedRecentCount: plan.protectedRecentCount,
+        deferredByRunCapCount: plan.deferredByRunCapCount,
+        deferredByScopeCapCount: plan.deferredByScopeCapCount,
+        excludedByAllowCount: plan.excludedByAllowCount,
+        excludedByDenyCount: plan.excludedByDenyCount,
+        excludedByPresetCount: plan.excludedByPresetCount,
+        excludedByUploaderCount: plan.excludedByUploaderCount,
+        excludedByTypeCount: plan.excludedByTypeCount,
+        excludedByDateCount: plan.excludedByDateCount,
+        filters: {
+          uploadedBy: [...plan.filters.uploadedBy],
+          extensions: [...plan.filters.extensions],
+          mimePrefixes: [...plan.filters.mimePrefixes],
+          uploadedAfterMs: plan.filters.uploadedAfterMs,
+          uploadedBeforeMs: plan.filters.uploadedBeforeMs,
+        },
+      };
+    } catch (err) {
+      runFailed = true;
+      status.totalFailures += 1;
+      setLastError(toErrorMessage(err));
+      logger.error('halo: file retention run failed', {
+        error: serializeError(err),
+      });
+    } finally {
+      if (!runFailed) {
+        status.lastSuccessAtMs = nowMs();
+      }
+
+      status.running = false;
+      status.lastRunFinishedAtMs = nowMs();
+    }
+  };
+
+  const drainRunQueue = async () => {
+    if (queueDrainPromise) return queueDrainPromise;
+
+    queueDrainPromise = (async () => {
+      while (pendingRuns.length > 0) {
+        const request = pendingRuns.shift();
+        if (!request) continue;
+
+        try {
+          await executeRun(request.options);
+          request.resolve();
+        } catch (err) {
+          request.reject(err);
         }
-
-        status.running = false;
-        status.lastRunFinishedAtMs = nowMs();
       }
     })().finally(() => {
-      inFlight = null;
+      queueDrainPromise = null;
     });
 
-    return inFlight;
+    return queueDrainPromise;
+  };
+
+  const runNow = async (runOptions: FileMemoryRetentionRunOptions = {}): Promise<void> => {
+    if (!resolved) return;
+
+    return await new Promise<void>((resolve, reject) => {
+      pendingRuns.push({
+        options: { ...runOptions },
+        resolve,
+        reject,
+      });
+
+      void drainRunQueue();
+    });
   };
 
   const start = () => {

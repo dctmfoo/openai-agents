@@ -15,8 +15,8 @@ export type ScopeFileRecord = {
   filename: string;
   mimeType: string;
   sizeBytes: number;
-  openaiFileId: string;
-  vectorStoreFileId: string;
+  openaiFileId: string | null;
+  vectorStoreFileId: string | null;
   status: 'in_progress' | 'completed' | 'failed';
   lastError: string | null;
   uploadedBy: string;

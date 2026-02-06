@@ -102,7 +102,7 @@ const seedScopeFileRegistry = async (rootDir: string, scopeId: string) => {
       mimeType: 'application/pdf',
       sizeBytes: 123,
       openaiFileId: 'file_1',
-      vectorStoreFileId: '',
+      vectorStoreFileId: null,
       status: 'completed',
       lastError: null,
       uploadedBy: 'wags',
@@ -431,6 +431,45 @@ describe('gateway status handler', () => {
       uploadedBeforeMs: 20,
     });
     expect(res.statusCode).toBe(200);
+  });
+
+  it('returns 500 when file retention run fails', async () => {
+    const store = await makeSessionStore();
+    const runFileRetentionNow = vi.fn().mockRejectedValue(new Error('boom'));
+
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: '1.2.3',
+      haloHome: buildHaloHomePaths('/halo'),
+      sessionStore: store,
+      config: {
+        fileMemory: {
+          enabled: true,
+          retention: {
+            enabled: true,
+          },
+        },
+      },
+      runFileRetentionNow,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'POST',
+        url: '/file-retention/run',
+        socket: { remoteAddress: '127.0.0.1' },
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(500);
+    expect(JSON.parse(res.body)).toEqual({
+      error: 'file_retention_failed',
+      message: 'boom',
+    });
   });
 
   it('rejects non-local file retention runs', async () => {
@@ -1174,7 +1213,7 @@ describe('gateway status handler', () => {
         mimeType: 'application/pdf',
         sizeBytes: 123,
         openaiFileId: 'file_2',
-        vectorStoreFileId: '',
+        vectorStoreFileId: null,
         status: 'completed',
         lastError: null,
         uploadedBy: 'wags',

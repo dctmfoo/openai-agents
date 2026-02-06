@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 import { createFileMemoryRetentionScheduler } from './fileMemoryRetentionScheduler.js';
+import { setScopeVectorStoreId, upsertScopeFileRecord } from './scopeFileRegistry.js';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -794,6 +798,177 @@ describe('fileMemoryRetentionScheduler', () => {
 
     const summary = scheduler.getStatus().lastRunSummary;
     expect(summary?.excludedByPresetCount).toBe(1);
+  });
+
+  it('retains failed records with null OpenAI/vector-store ids from disk registries', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'file-memory-retention-'));
+    const scopeId = 'telegram:dm:wags';
+    const nowMs = 90 * 24 * 60 * 60 * 1000;
+    const dayMs = 24 * 60 * 60 * 1000;
+
+    await setScopeVectorStoreId({ rootDir, scopeId }, 'vs_1', 100);
+    await upsertScopeFileRecord(
+      { rootDir, scopeId },
+      {
+        telegramFileId: 'telegram-file-1',
+        telegramFileUniqueId: 'telegram-unique-1',
+        filename: 'failed.pdf',
+        mimeType: 'application/pdf',
+        sizeBytes: 123,
+        openaiFileId: 'file_1',
+        vectorStoreFileId: null,
+        status: 'failed',
+        lastError: 'index failed',
+        uploadedBy: 'wags',
+        uploadedAtMs: nowMs - 80 * dayMs,
+      },
+      100,
+    );
+
+    const deleted: Array<{ scopeId: string; fileRef: string; deleteOpenAIFile: boolean }> = [];
+
+    const scheduler = createFileMemoryRetentionScheduler({
+      rootDir,
+      nowMs: () => nowMs,
+      fileMemoryConfig: {
+        enabled: true,
+        retention: {
+          enabled: true,
+          maxAgeDays: 30,
+          runIntervalMinutes: 60,
+          deleteOpenAIFiles: true,
+          maxFilesPerRun: 10,
+          keepRecentPerScope: 0,
+        },
+      },
+      deleteScopedFile: async ({ scopeId, fileRef, deleteOpenAIFile }) => {
+        deleted.push({ scopeId, fileRef, deleteOpenAIFile });
+        return { ok: true, deleted: true, removed: null };
+      },
+    });
+
+    await scheduler.runNow();
+
+    expect(deleted).toEqual([
+      {
+        scopeId,
+        fileRef: 'telegram-unique-1',
+        deleteOpenAIFile: true,
+      },
+    ]);
+  });
+
+  it('queues run options requested while another retention run is in-flight', async () => {
+    const nowMs = 90 * 24 * 60 * 60 * 1000;
+    const dayMs = 24 * 60 * 60 * 1000;
+
+    let releaseFirstDelete!: () => void;
+    const firstDeleteBlocked = new Promise<void>((resolve) => {
+      releaseFirstDelete = () => resolve();
+    });
+
+    const deleted: Array<{ scopeId: string; fileRef: string; deleteOpenAIFile: boolean }> = [];
+
+    const scheduler = createFileMemoryRetentionScheduler({
+      rootDir: '/halo',
+      nowMs: () => nowMs,
+      fileMemoryConfig: {
+        enabled: true,
+        retention: {
+          enabled: true,
+          maxAgeDays: 30,
+          runIntervalMinutes: 60,
+          deleteOpenAIFiles: true,
+          maxFilesPerRun: 10,
+          keepRecentPerScope: 0,
+        },
+      },
+      listScopeRegistries: async () => [
+        {
+          scopeId: 'telegram:dm:a',
+          vectorStoreId: 'vs_a',
+          createdAtMs: 1,
+          updatedAtMs: 1,
+          files: [
+            {
+              telegramFileId: 'telegram-file-a',
+              telegramFileUniqueId: 'telegram-unique-a',
+              filename: 'a.pdf',
+              mimeType: 'application/pdf',
+              sizeBytes: 123,
+              openaiFileId: 'file_a',
+              vectorStoreFileId: 'vsfile_a',
+              status: 'completed',
+              lastError: null,
+              uploadedBy: 'wags',
+              uploadedAtMs: nowMs - 80 * dayMs,
+            },
+          ],
+        },
+        {
+          scopeId: 'telegram:dm:b',
+          vectorStoreId: 'vs_b',
+          createdAtMs: 1,
+          updatedAtMs: 1,
+          files: [
+            {
+              telegramFileId: 'telegram-file-b',
+              telegramFileUniqueId: 'telegram-unique-b',
+              filename: 'b.pdf',
+              mimeType: 'application/pdf',
+              sizeBytes: 123,
+              openaiFileId: 'file_b',
+              vectorStoreFileId: 'vsfile_b',
+              status: 'completed',
+              lastError: null,
+              uploadedBy: 'wags',
+              uploadedAtMs: nowMs - 81 * dayMs,
+            },
+          ],
+        },
+      ],
+      deleteScopedFile: async ({ scopeId, fileRef, deleteOpenAIFile }) => {
+        deleted.push({ scopeId, fileRef, deleteOpenAIFile });
+
+        if (scopeId === 'telegram:dm:a') {
+          await firstDeleteBlocked;
+        }
+
+        return { ok: true, deleted: true, removed: null };
+      },
+    });
+
+    const firstRun = scheduler.runNow({ scopeId: 'telegram:dm:a', dryRun: false });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const secondRun = scheduler.runNow({ scopeId: 'telegram:dm:b', dryRun: true });
+
+    expect(deleted).toEqual([
+      {
+        scopeId: 'telegram:dm:a',
+        fileRef: 'telegram-unique-a',
+        deleteOpenAIFile: true,
+      },
+    ]);
+
+    releaseFirstDelete();
+
+    await firstRun;
+    await secondRun;
+
+    expect(deleted).toEqual([
+      {
+        scopeId: 'telegram:dm:a',
+        fileRef: 'telegram-unique-a',
+        deleteOpenAIFile: true,
+      },
+    ]);
+
+    const summary = scheduler.getStatus().lastRunSummary;
+    expect(summary?.dryRun).toBe(true);
+    expect(summary?.scopeCount).toBe(1);
+    expect(summary?.candidateCount).toBe(1);
   });
 
   it('runs on interval when started', async () => {

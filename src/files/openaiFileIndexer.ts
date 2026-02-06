@@ -286,6 +286,10 @@ export async function indexTelegramDocument(
         vectorStoreFile.status,
         vectorStoreFile.last_error?.message,
       );
+      const vectorStoreFileId =
+        typeof vectorStoreFile.id === 'string' && vectorStoreFile.id.trim()
+          ? vectorStoreFile.id
+          : null;
 
       if (vectorStoreFile.status !== 'completed') {
         await upsertScopeFileRecord(
@@ -297,7 +301,7 @@ export async function indexTelegramDocument(
             mimeType: input.mimeType,
             sizeBytes: input.sizeBytes,
             openaiFileId: openaiFile.id,
-            vectorStoreFileId: vectorStoreFile.id,
+            vectorStoreFileId,
             status: 'failed',
             lastError: errorMessage,
             uploadedBy: input.uploadedBy,
@@ -312,6 +316,34 @@ export async function indexTelegramDocument(
         };
       }
 
+      if (!vectorStoreFileId) {
+        const missingIdMessage =
+          'OpenAI indexing completed without a vector-store file id.';
+
+        await upsertScopeFileRecord(
+          { rootDir: input.rootDir, scopeId: input.scopeId },
+          {
+            telegramFileId: input.telegramFileId,
+            telegramFileUniqueId: input.telegramFileUniqueId,
+            filename: input.filename,
+            mimeType: input.mimeType,
+            sizeBytes: input.sizeBytes,
+            openaiFileId: openaiFile.id,
+            vectorStoreFileId: null,
+            status: 'failed',
+            lastError: missingIdMessage,
+            uploadedBy: input.uploadedBy,
+            uploadedAtMs: nowMs(),
+          },
+          nowMs(),
+        );
+
+        return {
+          ok: false,
+          message: missingIdMessage,
+        };
+      }
+
       await upsertScopeFileRecord(
         { rootDir: input.rootDir, scopeId: input.scopeId },
         {
@@ -321,7 +353,7 @@ export async function indexTelegramDocument(
           mimeType: input.mimeType,
           sizeBytes: input.sizeBytes,
           openaiFileId: openaiFile.id,
-          vectorStoreFileId: vectorStoreFile.id,
+          vectorStoreFileId,
           status: 'completed',
           lastError: null,
           uploadedBy: input.uploadedBy,
@@ -347,7 +379,7 @@ export async function indexTelegramDocument(
             mimeType: input.mimeType,
             sizeBytes: input.sizeBytes,
             openaiFileId,
-            vectorStoreFileId: '',
+            vectorStoreFileId: null,
             status: 'failed',
             lastError: message,
             uploadedBy: input.uploadedBy,

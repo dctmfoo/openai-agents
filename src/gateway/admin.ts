@@ -458,15 +458,23 @@ export function createStatusHandler(context: StatusContext): StatusHandler {
         const uploadedAfterMs = parseMsQuery(url.searchParams.get('uploadedAfterMs'));
         const uploadedBeforeMs = parseMsQuery(url.searchParams.get('uploadedBeforeMs'));
 
-        await context.runFileRetentionNow({
-          scopeId,
-          dryRun,
-          uploadedBy,
-          extensions,
-          mimePrefixes,
-          uploadedAfterMs,
-          uploadedBeforeMs,
-        });
+        try {
+          await context.runFileRetentionNow({
+            scopeId,
+            dryRun,
+            uploadedBy,
+            extensions,
+            mimePrefixes,
+            uploadedAfterMs,
+            uploadedBeforeMs,
+          });
+        } catch (err) {
+          sendJson(500, {
+            error: 'file_retention_failed',
+            message: err instanceof Error ? err.message : String(err),
+          });
+          return;
+        }
 
         sendJson(200, {
           ok: true,
