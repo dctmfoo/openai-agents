@@ -30,6 +30,12 @@ const statusPayload = document.querySelector('[data-status-payload]');
 const statusGateway = document.querySelector('[data-status-gateway]');
 const statusRetry = document.querySelector('[data-status-retry]');
 
+const semanticCard = document.querySelector('[data-semantic-card]');
+const semanticTitle = document.querySelector('[data-semantic-title]');
+const semanticMeta = document.querySelector('[data-semantic-meta]');
+const semanticPayload = document.querySelector('[data-semantic-payload]');
+const semanticGateway = document.querySelector('[data-semantic-gateway]');
+
 const sessionsCard = document.querySelector('[data-sessions-card]');
 const sessionsTitle = document.querySelector('[data-sessions-title]');
 const sessionsMeta = document.querySelector('[data-sessions-meta]');
@@ -63,6 +69,9 @@ const policyUrl = buildPolicyStatusUrl(gatewayBase);
 if (statusGateway) {
   statusGateway.textContent = gatewayBase;
 }
+if (semanticGateway) {
+  semanticGateway.textContent = gatewayBase;
+}
 if (sessionsGateway) {
   sessionsGateway.textContent = gatewayBase;
 }
@@ -72,6 +81,64 @@ if (policyGateway) {
 if (transcriptGateway) {
   transcriptGateway.textContent = gatewayBase;
 }
+
+const formatMaybeTime = (value) => {
+  if (!Number.isFinite(value)) return '—';
+  return new Date(value).toLocaleString();
+};
+
+const setSemanticLoading = () => {
+  semanticCard?.classList.remove('status--error');
+  if (semanticTitle) semanticTitle.textContent = 'Semantic sync';
+  if (semanticMeta) semanticMeta.textContent = 'Checking...';
+  if (semanticPayload) semanticPayload.textContent = 'Loading semantic sync status...';
+};
+
+const setSemanticError = (error) => {
+  semanticCard?.classList.add('status--error');
+  if (semanticTitle) semanticTitle.textContent = 'Semantic sync unavailable';
+  if (semanticMeta) semanticMeta.textContent = 'Unavailable';
+  if (semanticPayload) semanticPayload.textContent = formatStatusError(error, gatewayBase);
+};
+
+const setSemanticSuccess = (payload) => {
+  semanticCard?.classList.remove('status--error');
+  if (semanticTitle) semanticTitle.textContent = 'Semantic sync';
+  if (semanticMeta) semanticMeta.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+
+  if (!semanticPayload) return;
+
+  const semantic = payload && typeof payload === 'object' ? payload.semanticSync : null;
+  if (!semantic || typeof semantic !== 'object') {
+    semanticPayload.textContent = 'Gateway did not report semantic sync status.';
+    return;
+  }
+
+  const lines = [
+    `Enabled: ${semantic.enabled ? 'yes' : 'no'}`,
+    `Interval (minutes): ${semantic.intervalMinutes ?? '—'}`,
+    `Active scopes: ${semantic.activeScopeCount ?? 0}`,
+    `Running: ${semantic.running ? 'yes' : 'no'}`,
+    `Total runs: ${semantic.totalRuns ?? 0}`,
+    `Total failures: ${semantic.totalFailures ?? 0}`,
+    `Last run started: ${formatMaybeTime(semantic.lastRunStartedAtMs)}`,
+    `Last run finished: ${formatMaybeTime(semantic.lastRunFinishedAtMs)}`,
+    `Last success: ${formatMaybeTime(semantic.lastSuccessAtMs)}`,
+  ];
+
+  if (semantic.lastError && typeof semantic.lastError === 'object') {
+    lines.push('Last error:');
+    if (semantic.lastError.scopeId) {
+      lines.push(`  scope: ${semantic.lastError.scopeId}`);
+    }
+    lines.push(`  at: ${formatMaybeTime(semantic.lastError.atMs)}`);
+    lines.push(`  message: ${semantic.lastError.message ?? 'unknown error'}`);
+  } else {
+    lines.push('Last error: —');
+  }
+
+  semanticPayload.textContent = lines.join('\n');
+};
 
 const setLoading = () => {
   statusCard?.classList.remove('status--error');
@@ -84,6 +151,7 @@ const setLoading = () => {
   if (statusPayload) {
     statusPayload.textContent = 'Loading gateway status...';
   }
+  setSemanticLoading();
 };
 
 const setError = (error) => {
@@ -97,6 +165,7 @@ const setError = (error) => {
   if (statusPayload) {
     statusPayload.textContent = formatStatusError(error, gatewayBase);
   }
+  setSemanticError(error);
 };
 
 const setSuccess = (payload) => {
@@ -111,6 +180,7 @@ const setSuccess = (payload) => {
   if (statusPayload) {
     statusPayload.textContent = formatStatusPayload(payload);
   }
+  setSemanticSuccess(payload);
 };
 
 const fetchStatus = async () => {

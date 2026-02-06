@@ -87,7 +87,7 @@ Notes:
 
 Notes:
 - When running via the gateway (`pnpm start:gateway`), the config file values are used.
-- `HALO_COMPACTION_ENABLED` and `HALO_DISTILLATION_ENABLED` only affect SessionStore defaults when it is instantiated without explicit options (CLI/dev paths).
+- `HALO_COMPACTION_ENABLED` and `HALO_DISTILLATION_ENABLED` only affect SessionStore defaults when it is instantiated without explicit options (mainly CLI).
 - SessionStore defaults also auto-enable compaction when `OPENAI_API_KEY` is set, unless you pass explicit options.
 
 ### memory
@@ -109,7 +109,7 @@ Notes:
 - `embeddingModel`: provider model name
 - `embeddingDimensions`: embedding size
 - `vecExtensionPath`: optional override for sqlite-vec extension path
-- `syncIntervalMinutes`: how often to sync markdown -> vector store
+- `syncIntervalMinutes`: background sync cadence (minutes) for markdown -> vector store on active scopes (gateway + dev:telegram)
 - `search`: scoring weights and minimum relevance
 
 Requirements:

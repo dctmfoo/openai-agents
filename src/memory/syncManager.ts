@@ -29,6 +29,16 @@ export type SyncVectorStore = {
     tokenCount: number;
     embedding: number[];
   }>) => number[];
+  insertChunksIgnoreConflicts?: (chunks: Array<{
+    chunkId: string;
+    path: string;
+    startLine: number;
+    endLine: number;
+    content: string;
+    contentHash: string;
+    tokenCount: number;
+    embedding: number[];
+  }>) => number[];
   supersedeChunks: (chunkIdxs: number[], supersededBy?: number | null) => void;
 };
 
