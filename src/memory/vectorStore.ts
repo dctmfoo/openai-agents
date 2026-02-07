@@ -345,6 +345,56 @@ export class VectorStore {
     return ids;
   }
 
+  private upsertChunkIndexes(chunkIdx: number, content: string, path: string, embedding: number[]) {
+    this.db.prepare('DELETE FROM chunks_fts WHERE chunk_idx = ?').run(chunkIdx);
+    this.db.prepare('DELETE FROM chunks_vec WHERE chunk_idx = ?').run(chunkIdx);
+
+    this.db
+      .prepare('INSERT INTO chunks_fts(chunk_idx, content, path) VALUES (?, ?, ?)')
+      .run(chunkIdx, content, path);
+    this.db
+      .prepare('INSERT INTO chunks_vec(chunk_idx, embedding) VALUES (?, ?)')
+      .run(BigInt(chunkIdx), serializeEmbedding(embedding));
+  }
+
+  private reactivateChunk(chunkIdx: number, chunk: ChunkInsertInput) {
+    const now = Date.now();
+    this.db
+      .prepare(
+        `UPDATE chunks SET
+          path = ?,
+          start_line = ?,
+          end_line = ?,
+          content = ?,
+          content_hash = ?,
+          token_count = ?,
+          updated_at = ?,
+          superseded_at = NULL,
+          superseded_by = NULL,
+          embedding_provider = ?,
+          embedding_model = ?,
+          embedding_dimensions = ?,
+          embedding_json = ?
+         WHERE chunk_idx = ?`,
+      )
+      .run(
+        chunk.path,
+        chunk.startLine,
+        chunk.endLine,
+        chunk.content,
+        chunk.contentHash,
+        chunk.tokenCount,
+        now,
+        this.embedding.provider,
+        this.embedding.model,
+        this.embedding.dimensions,
+        serializeEmbedding(chunk.embedding),
+        chunkIdx,
+      );
+
+    this.upsertChunkIndexes(chunkIdx, chunk.content, chunk.path, chunk.embedding);
+  }
+
   insertChunksIgnoreConflicts(chunks: ChunkInsertInput[]): number[] {
     const insertChunk = this.db.prepare(
       `INSERT OR IGNORE INTO chunks(
@@ -352,14 +402,10 @@ export class VectorStore {
         created_at, updated_at, embedding_provider, embedding_model, embedding_dimensions, embedding_json
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
-    const insertFts = this.db.prepare(
-      `INSERT INTO chunks_fts(chunk_idx, content, path) VALUES (?, ?, ?)`,
-    );
-    const insertVec = this.db.prepare(
-      `INSERT INTO chunks_vec(chunk_idx, embedding) VALUES (?, ?)`,
-    );
     const lookupByChunkId = this.db.prepare(
-      `SELECT chunk_idx as chunkIdx FROM chunks WHERE chunk_id = ?`,
+      `SELECT chunk_idx as chunkIdx, superseded_at as supersededAt
+       FROM chunks
+       WHERE chunk_id = ?`,
     );
 
     const ids: number[] = [];
@@ -387,30 +433,80 @@ export class VectorStore {
       ids.push(chunkIdx);
 
       if (inserted) {
-        insertFts.run(chunkIdx, chunk.content, chunk.path);
-        insertVec.run(BigInt(chunkIdx), serializeEmbedding(chunk.embedding));
+        this.upsertChunkIndexes(chunkIdx, chunk.content, chunk.path, chunk.embedding);
+        continue;
+      }
+
+      const needsReactivation =
+        existing?.supersededAt !== null && existing?.supersededAt !== undefined;
+      if (needsReactivation) {
+        this.reactivateChunk(chunkIdx, chunk);
       }
     }
     return ids;
   }
 
+  repairSelfSupersededChunks(path: string): number {
+    const rows = this.db
+      .prepare(
+        `SELECT chunk_idx as chunkIdx,
+                chunk_id as chunkId,
+                path,
+                start_line as startLine,
+                end_line as endLine,
+                content,
+                content_hash as contentHash,
+                token_count as tokenCount,
+                embedding_json as embeddingJson
+         FROM chunks
+         WHERE path = ?
+           AND superseded_at IS NOT NULL
+           AND superseded_by = chunk_idx`,
+      )
+      .all(path);
+
+    for (const row of rows) {
+      const chunk: ChunkInsertInput = {
+        chunkId: String(row.chunkId),
+        path: String(row.path),
+        startLine: Number(row.startLine),
+        endLine: Number(row.endLine),
+        content: String(row.content),
+        contentHash: String(row.contentHash),
+        tokenCount: Number(row.tokenCount),
+        embedding: parseEmbedding(String(row.embeddingJson)),
+      };
+      this.reactivateChunk(Number(row.chunkIdx), chunk);
+    }
+
+    return rows.length;
+  }
+
   supersedeChunks(chunkIdxs: number[], supersededBy?: number | null) {
     if (chunkIdxs.length === 0) return;
+
+    const targetChunkIdxs =
+      supersededBy === null || supersededBy === undefined
+        ? chunkIdxs
+        : chunkIdxs.filter((chunkIdx) => chunkIdx !== supersededBy);
+
+    if (targetChunkIdxs.length === 0) return;
+
     const now = Date.now();
-    const placeholders = chunkIdxs.map(() => '?').join(', ');
+    const placeholders = targetChunkIdxs.map(() => '?').join(', ');
     this.db
       .prepare(
         `UPDATE chunks SET superseded_at = ?, superseded_by = ?
          WHERE chunk_idx IN (${placeholders})`,
       )
-      .run(now, supersededBy ?? null, ...chunkIdxs);
+      .run(now, supersededBy ?? null, ...targetChunkIdxs);
 
     this.db
       .prepare(`DELETE FROM chunks_vec WHERE chunk_idx IN (${placeholders})`)
-      .run(...chunkIdxs);
+      .run(...targetChunkIdxs);
     this.db
       .prepare(`DELETE FROM chunks_fts WHERE chunk_idx IN (${placeholders})`)
-      .run(...chunkIdxs);
+      .run(...targetChunkIdxs);
   }
 
   vectorSearch(embedding: number[], limit: number): VectorSearchResult[] {

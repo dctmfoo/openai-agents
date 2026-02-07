@@ -41,6 +41,7 @@ export type SyncVectorStore = {
     tokenCount: number;
     embedding: number[];
   }>) => MaybePromise<number[]>;
+  repairSelfSupersededChunks?: (path: string) => number;
   supersedeChunks: (chunkIdxs: number[], supersededBy?: number | null) => void;
 };
 
@@ -114,7 +115,8 @@ export class SyncManager {
       const contents = await readFile(path, 'utf8');
       const hash = sha256(contents);
       const info = this.options.vectorStore.getFile(path);
-      if (info && info.hash === hash) {
+      const repaired = this.options.vectorStore.repairSelfSupersededChunks?.(path) ?? 0;
+      if (info && info.hash === hash && repaired === 0) {
         continue;
       }
 
@@ -184,19 +186,52 @@ export class SyncManager {
       this.options.vectorStore.upsertEmbeddingCache(entry.contentHash, entry.embedding);
     });
 
-    const newChunkIdxs = await this.options.vectorStore.insertChunks(inserts);
+    const oldByChunkId = new Map(oldChunks.map((chunk) => [chunk.chunkId, chunk]));
+    const retainedOldIdxs = new Set<number>();
+    const pendingInserts: typeof inserts = [];
+    const pendingEmbeddings: number[][] = [];
+
+    inserts.forEach((entry, idx) => {
+      const existing = oldByChunkId.get(entry.chunkId);
+      if (existing) {
+        retainedOldIdxs.add(existing.chunkIdx);
+        return;
+      }
+      pendingInserts.push(entry);
+      pendingEmbeddings.push(verified[idx]);
+    });
+
+    const insertFn =
+      this.options.vectorStore.insertChunksIgnoreConflicts?.bind(this.options.vectorStore) ??
+      this.options.vectorStore.insertChunks.bind(this.options.vectorStore);
+    const insertedChunkIdxs =
+      pendingInserts.length > 0
+        ? await insertFn(pendingInserts)
+        : [];
+
+    if (insertedChunkIdxs.length !== pendingInserts.length) {
+      throw new Error(
+        `Vector store returned ${insertedChunkIdxs.length} chunk ids for ${pendingInserts.length} inserts`,
+      );
+    }
+
     const similarityThreshold = this.options.similarityThreshold ?? DEFAULT_SIMILARITY_THRESHOLD;
     const supersedeMap = new Map<number, number | null>();
+    const oldToSupersede = oldChunks.filter((chunk) => !retainedOldIdxs.has(chunk.chunkIdx));
 
-    for (const oldChunk of oldChunks) {
+    for (const oldChunk of oldToSupersede) {
       let best: { idx: number; score: number } | null = null;
-      for (let index = 0; index < newChunkIdxs.length; index++) {
-        const newIdx = newChunkIdxs[index];
-        const similarity = cosineSimilarity(oldChunk.embedding, verified[index]);
+      for (let index = 0; index < insertedChunkIdxs.length; index++) {
+        const newIdx = insertedChunkIdxs[index];
+        if (!Number.isFinite(newIdx)) continue;
+        if (newIdx === oldChunk.chunkIdx) continue;
+
+        const similarity = cosineSimilarity(oldChunk.embedding, pendingEmbeddings[index]);
         if (!best || similarity > best.score) {
           best = { idx: newIdx, score: similarity };
         }
       }
+
       if (best !== null && best.score >= similarityThreshold) {
         supersedeMap.set(oldChunk.chunkIdx, best.idx);
       } else {
