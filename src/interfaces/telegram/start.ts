@@ -67,6 +67,7 @@ const start = async () => {
         return import('../../prime/prime.js').then(({ runPrime }) =>
           runPrime(input, {
             ...opts,
+            toolsConfig: haloConfig.tools,
             sessionStore,
           }),
         );
