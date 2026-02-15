@@ -1,14 +1,18 @@
 import process from 'node:process';
 import path from 'node:path';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { type AgentInputItem } from '@openai/agents';
 import { Bot } from 'grammy';
 import { runPrime } from '../../prime/prime.js';
 import { appendScopedDailyNote } from '../../memory/scopedMemory.js';
 import { loadFamilyConfig, type FamilyConfig } from '../../runtime/familyConfig.js';
-import type { FileMemoryConfig } from '../../runtime/haloConfig.js';
+import type { FileMemoryConfig, ToolsConfig } from '../../runtime/haloConfig.js';
 import { getHaloHome } from '../../runtime/haloHome.js';
 import { appendJsonl, type EventLogRecord } from '../../utils/logging.js';
 import { resolveTelegramPolicy, type TelegramPolicyDecision } from './policy.js';
 import { getScopeVectorStoreId } from '../../files/scopeFileRegistry.js';
+import { hashSessionId } from '../../sessions/sessionHash.js';
+import { TOOL_NAMES } from '../../tools/toolNames.js';
 import {
   indexTelegramDocument,
   type IndexTelegramDocumentResult,
@@ -22,9 +26,23 @@ type TelegramDocument = {
   file_size?: number;
 };
 
+type TelegramPhotoSize = {
+  file_id: string;
+  file_unique_id: string;
+  width: number;
+  height: number;
+  file_size?: number;
+};
+
 export type TelegramContext = {
   chat: { id: number; type: string };
-  message: { text?: string; document?: TelegramDocument; message_id: number };
+  message: {
+    text?: string;
+    caption?: string;
+    document?: TelegramDocument;
+    photo?: TelegramPhotoSize[];
+    message_id: number;
+  };
   from?: { id?: number | string };
   reply: (text: string) => Promise<unknown>;
   getFile?: () => Promise<{ file_path?: string }>;
@@ -33,7 +51,7 @@ export type TelegramContext = {
   };
 };
 
-type TelegramMessageEvent = 'message:text' | 'message:document';
+type TelegramMessageEvent = 'message:text' | 'message:document' | 'message:photo';
 
 export type TelegramBotLike = {
   on: (event: TelegramMessageEvent, handler: (ctx: TelegramContext) => Promise<void> | void) => void;
@@ -43,6 +61,7 @@ export type TelegramBotLike = {
 
 type DownloadedTelegramFile = {
   bytes: Uint8Array;
+  filePath?: string;
 };
 
 type TelegramAdapterDeps = {
@@ -51,7 +70,11 @@ type TelegramAdapterDeps = {
   appendJsonl: typeof appendJsonl;
   loadFamilyConfig: typeof loadFamilyConfig;
   getScopeVectorStoreId: typeof getScopeVectorStoreId;
-  downloadTelegramFile: (ctx: TelegramContext, token: string) => Promise<DownloadedTelegramFile>;
+  downloadTelegramFile: (input: {
+    ctx: TelegramContext;
+    token: string;
+    fileId: string;
+  }) => Promise<DownloadedTelegramFile>;
   indexTelegramDocument: (input: {
     rootDir: string;
     scopeId: string;
@@ -73,6 +96,7 @@ export type TelegramAdapterOptions = {
   rootDir?: string;
   haloHome?: string;
   fileMemory?: FileMemoryConfig;
+  toolsConfig?: ToolsConfig;
   bot?: TelegramBotLike;
   now?: () => Date;
   deps?: Partial<TelegramAdapterDeps>;
@@ -109,6 +133,18 @@ const DEFAULT_FILE_MEMORY_CONFIG: FileMemoryConfig = {
 
 export const UNKNOWN_DM_REPLY =
   'Hi! This bot is private to our family. Please ask a parent to invite you.';
+
+const TELEGRAM_VISION_MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const TELEGRAM_VISION_DEFAULT_PROMPT =
+  'Please describe this image and answer the user question if one was included. Keep the response concise unless detailed analysis is requested.';
+const TELEGRAM_VISION_DISABLED_TOOLS = [
+  TOOL_NAMES.webSearch,
+  TOOL_NAMES.readScopedMemory,
+  TOOL_NAMES.rememberDaily,
+  TOOL_NAMES.semanticSearch,
+  TOOL_NAMES.fileSearch,
+  TOOL_NAMES.shell,
+] as const;
 
 function getFileExtension(filename: string): string | null {
   const normalized = filename.trim();
@@ -147,21 +183,203 @@ function buildUploadIndexFailureMessage(message: string): string {
   return `Could not finish indexing this file: ${clipped}`;
 }
 
-async function defaultDownloadTelegramFile(
-  ctx: TelegramContext,
-  token: string,
-): Promise<DownloadedTelegramFile> {
-  const document = ctx.message.document;
-  if (!document) {
-    throw new Error('Document metadata is missing from Telegram context.');
+function serializeError(err: unknown): { name: string; message: string; stack?: string } | string {
+  if (err instanceof Error) {
+    return {
+      name: err.name,
+      message: err.message,
+      stack: err.stack,
+    };
   }
+
+  return String(err);
+}
+
+function buildUploadId(ctx: TelegramContext, document: TelegramDocument): string {
+  return `${ctx.chat.id}:${ctx.message.message_id}:${document.file_unique_id}`;
+}
+
+function getLargestPhotoSize(photoSizes: TelegramPhotoSize[]): TelegramPhotoSize {
+  if (photoSizes.length === 1) return photoSizes[0];
+
+  return photoSizes.reduce((best, current) => {
+    const bestPixels = best.width * best.height;
+    const currentPixels = current.width * current.height;
+
+    if (currentPixels > bestPixels) return current;
+
+    if (currentPixels === bestPixels) {
+      const bestSize = best.file_size ?? 0;
+      const currentSize = current.file_size ?? 0;
+      if (currentSize > bestSize) return current;
+    }
+
+    return best;
+  });
+}
+
+function isImageMimeType(mimeType: string | undefined): boolean {
+  return typeof mimeType === 'string' && mimeType.toLowerCase().startsWith('image/');
+}
+
+function inferMimeTypeFromExtension(extension: string | null): string | null {
+  if (!extension) return null;
+  const normalized = extension.toLowerCase();
+  if (normalized === 'jpg' || normalized === 'jpeg') return 'image/jpeg';
+  if (normalized === 'png') return 'image/png';
+  if (normalized === 'webp') return 'image/webp';
+  if (normalized === 'gif') return 'image/gif';
+  if (normalized === 'bmp') return 'image/bmp';
+  if (normalized === 'heic') return 'image/heic';
+  if (normalized === 'heif') return 'image/heif';
+  return null;
+}
+
+function inferExtensionFromMimeType(mimeType: string): string {
+  const normalized = mimeType.toLowerCase();
+  if (normalized === 'image/jpeg') return 'jpg';
+  if (normalized === 'image/png') return 'png';
+  if (normalized === 'image/webp') return 'webp';
+  if (normalized === 'image/gif') return 'gif';
+  if (normalized === 'image/bmp') return 'bmp';
+  if (normalized === 'image/heic') return 'heic';
+  if (normalized === 'image/heif') return 'heif';
+  return 'bin';
+}
+
+function detectImageMimeType(bytes: Uint8Array): string | null {
+  if (bytes.byteLength >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return 'image/jpeg';
+  }
+
+  if (
+    bytes.byteLength >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return 'image/png';
+  }
+
+  if (
+    bytes.byteLength >= 12 &&
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    return 'image/webp';
+  }
+
+  if (
+    bytes.byteLength >= 6 &&
+    bytes[0] === 0x47 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x38 &&
+    (bytes[4] === 0x37 || bytes[4] === 0x39) &&
+    bytes[5] === 0x61
+  ) {
+    return 'image/gif';
+  }
+
+  return null;
+}
+
+function toSafePathSegment(value: string): string {
+  const normalized = value.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+  return normalized || 'image';
+}
+
+function buildVisionPrompt(caption: string | undefined): string {
+  const text = caption?.trim();
+  return text && text.length > 0 ? text : TELEGRAM_VISION_DEFAULT_PROMPT;
+}
+
+function getScopeImageDir(rootDir: string, scopeId: string, date: Date): string {
+  const hashedScope = hashSessionId(scopeId);
+  const iso = date.toISOString().slice(0, 10);
+  return path.join(rootDir, 'memory', 'scopes', hashedScope, 'images', iso);
+}
+
+function toBase64(input: Uint8Array): string {
+  return Buffer.from(input).toString('base64');
+}
+
+function buildImageDataUrl(bytes: Uint8Array, mimeType: string): string {
+  return `data:${mimeType};base64,${toBase64(bytes)}`;
+}
+
+function buildVisionImageFilename(input: {
+  source: 'photo' | 'document';
+  date: Date;
+  messageId: number;
+  fileUniqueId: string;
+  extension: string;
+}): string {
+  const compactTs = input.date.toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+  const safeUniqueId = toSafePathSegment(input.fileUniqueId).slice(0, 48);
+  return `${compactTs}-${input.source}-${input.messageId}-${safeUniqueId}.${input.extension}`;
+}
+
+function toRelativePath(rootDir: string, targetPath: string): string {
+  return path.relative(rootDir, targetPath).split(path.sep).join('/');
+}
+
+async function persistScopedVisionImage(input: {
+  rootDir: string;
+  scopeId: string;
+  source: 'photo' | 'document';
+  date: Date;
+  messageId: number;
+  fileUniqueId: string;
+  extension: string;
+  bytes: Uint8Array;
+}): Promise<{ absolutePath: string; relativePath: string; filename: string }> {
+  const baseDir = getScopeImageDir(input.rootDir, input.scopeId, input.date);
+  await mkdir(baseDir, { recursive: true });
+
+  const filename = buildVisionImageFilename({
+    source: input.source,
+    date: input.date,
+    messageId: input.messageId,
+    fileUniqueId: input.fileUniqueId,
+    extension: input.extension,
+  });
+  const absolutePath = path.join(baseDir, filename);
+  await writeFile(absolutePath, input.bytes);
+
+  return {
+    absolutePath,
+    relativePath: toRelativePath(input.rootDir, absolutePath),
+    filename,
+  };
+}
+
+async function defaultDownloadTelegramFile(
+  input: {
+    ctx: TelegramContext;
+    token: string;
+    fileId: string;
+  },
+): Promise<DownloadedTelegramFile> {
+  const { ctx, token, fileId } = input;
 
   let file: { file_path?: string } | null = null;
 
-  if (typeof ctx.getFile === 'function') {
+  if (ctx.api?.getFile) {
+    file = await ctx.api.getFile(fileId);
+  } else if (typeof ctx.getFile === 'function') {
     file = await ctx.getFile();
-  } else if (ctx.api?.getFile) {
-    file = await ctx.api.getFile(document.file_id);
   }
 
   const filePath = file?.file_path;
@@ -176,6 +394,7 @@ async function defaultDownloadTelegramFile(
 
   return {
     bytes: new Uint8Array(await response.arrayBuffer()),
+    filePath,
   };
 }
 
@@ -187,6 +406,7 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
     rootDir = haloHome,
     bot: providedBot,
     fileMemory = DEFAULT_FILE_MEMORY_CONFIG,
+    toolsConfig,
     now = () => new Date(),
     deps = {},
   } = options;
@@ -244,7 +464,7 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
         data: {
           channel: 'telegram',
           userId,
-          error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : String(err),
+          error: serializeError(err),
         },
       });
 
@@ -273,6 +493,291 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
 
     await ctx.reply('Something went wrong while computing policy scope. Check logs.');
     return null;
+  };
+
+  const handleVisionMessage = async (
+    ctx: TelegramContext,
+    input: {
+      source: 'photo' | 'document';
+      uploadId: string;
+      fileId: string;
+      fileUniqueId: string;
+      filename?: string;
+      mimeType?: string;
+      declaredSizeBytes?: number;
+      caption?: string;
+      width?: number;
+      height?: number;
+    },
+  ) => {
+    const receivedAt = now();
+    const elapsedMs = () => Math.max(0, now().getTime() - receivedAt.getTime());
+    const userId = String(ctx.from?.id ?? 'unknown');
+
+    const policy = await resolvePolicy(ctx, userId);
+    if (!policy) return;
+
+    if (!policy.allow) {
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'file.upload',
+        data: {
+          stage: 'policy_denied',
+          uploadId: input.uploadId,
+          chatId: ctx.chat.id,
+          userId,
+          reason: policy.reason ?? 'unknown',
+          source: input.source,
+        },
+      });
+
+      if (policy.reason === 'unknown_user' && ctx.chat.type === 'private') {
+        await ctx.reply(UNKNOWN_DM_REPLY);
+      }
+      return;
+    }
+
+    const scopeId = await resolveScopeId(ctx, userId, policy);
+    if (!scopeId) return;
+
+    await writeLog({
+      ts: now().toISOString(),
+      type: 'file.upload',
+      data: {
+        stage: 'vision_received',
+        uploadId: input.uploadId,
+        source: input.source,
+        chatId: ctx.chat.id,
+        userId,
+        scopeId,
+        messageId: ctx.message.message_id,
+        telegramFileId: input.fileId,
+        telegramFileUniqueId: input.fileUniqueId,
+        filename: input.filename ?? null,
+        mimeType: input.mimeType ?? null,
+        declaredSizeBytes: input.declaredSizeBytes ?? null,
+        width: input.width ?? null,
+        height: input.height ?? null,
+      },
+    });
+
+    let downloaded: DownloadedTelegramFile;
+    try {
+      downloaded = await downloadTelegramFileImpl({
+        ctx,
+        token,
+        fileId: input.fileId,
+      });
+    } catch (err) {
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'file.upload',
+        data: {
+          stage: 'download_failed',
+          uploadId: input.uploadId,
+          source: input.source,
+          chatId: ctx.chat.id,
+          userId,
+          scopeId,
+          durationMs: elapsedMs(),
+          error: serializeError(err),
+        },
+      });
+
+      await ctx.reply('Could not download that image from Telegram. Please try again.');
+      return;
+    }
+
+    const downloadedSizeBytes = downloaded.bytes.byteLength;
+    if (downloadedSizeBytes > TELEGRAM_VISION_MAX_IMAGE_BYTES) {
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'file.upload',
+        data: {
+          stage: 'validation_failed',
+          reason: 'vision_size_exceeded',
+          uploadId: input.uploadId,
+          source: input.source,
+          chatId: ctx.chat.id,
+          userId,
+          scopeId,
+          downloadedSizeBytes,
+          maxSizeBytes: TELEGRAM_VISION_MAX_IMAGE_BYTES,
+          durationMs: elapsedMs(),
+        },
+      });
+
+      await ctx.reply('That image is too large. Please send one under 20 MB.');
+      return;
+    }
+
+    const declaredMimeType = isImageMimeType(input.mimeType)
+      ? input.mimeType?.toLowerCase()
+      : undefined;
+    const fileNameExtension = getFileExtension(input.filename ?? '');
+    const filePathExtension = getFileExtension(downloaded.filePath ?? '');
+    const resolvedMimeType =
+      declaredMimeType ??
+      inferMimeTypeFromExtension(fileNameExtension) ??
+      inferMimeTypeFromExtension(filePathExtension) ??
+      detectImageMimeType(downloaded.bytes);
+
+    if (!resolvedMimeType || !resolvedMimeType.startsWith('image/')) {
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'file.upload',
+        data: {
+          stage: 'validation_failed',
+          reason: 'vision_unsupported_mime',
+          uploadId: input.uploadId,
+          source: input.source,
+          chatId: ctx.chat.id,
+          userId,
+          scopeId,
+          mimeType: input.mimeType ?? null,
+          filename: input.filename ?? null,
+          filePath: downloaded.filePath ?? null,
+          durationMs: elapsedMs(),
+        },
+      });
+
+      await ctx.reply('I can only analyze image files for vision right now.');
+      return;
+    }
+
+    const extension =
+      fileNameExtension ??
+      filePathExtension ??
+      inferExtensionFromMimeType(resolvedMimeType);
+
+    let persisted: { absolutePath: string; relativePath: string; filename: string };
+    try {
+      persisted = await persistScopedVisionImage({
+        rootDir,
+        scopeId,
+        source: input.source,
+        date: receivedAt,
+        messageId: ctx.message.message_id,
+        fileUniqueId: input.fileUniqueId,
+        extension,
+        bytes: downloaded.bytes,
+      });
+    } catch (err) {
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'prime.run.error',
+        data: {
+          channel: 'telegram',
+          action: 'vision_storage',
+          userId,
+          scopeId,
+          source: input.source,
+          error: serializeError(err),
+        },
+      });
+
+      await ctx.reply('Could not store that image for this chat. Please try again.');
+      return;
+    }
+
+    await writeLog({
+      ts: now().toISOString(),
+      type: 'file.upload',
+      data: {
+        stage: 'vision_stored',
+        uploadId: input.uploadId,
+        source: input.source,
+        chatId: ctx.chat.id,
+        userId,
+        scopeId,
+        storedPath: persisted.relativePath,
+        mimeType: resolvedMimeType,
+        downloadedSizeBytes,
+      },
+    });
+
+    const promptText = buildVisionPrompt(input.caption);
+    const dataUrl = buildImageDataUrl(downloaded.bytes, resolvedMimeType);
+    const visionInput: AgentInputItem[] = [
+      {
+        role: 'user',
+        content: [
+          { type: 'input_text', text: promptText },
+          { type: 'input_image', image: dataUrl, detail: 'auto' },
+        ],
+      },
+    ];
+
+    await writeLog({
+      ts: now().toISOString(),
+      type: 'prime.run.start',
+      data: {
+        channel: 'telegram',
+        action: 'vision',
+        userId,
+        scopeId,
+        source: input.source,
+        storedPath: persisted.relativePath,
+      },
+    });
+
+    try {
+      const result = await runPrimeImpl(visionInput, {
+        channel: 'telegram',
+        userId,
+        scopeId,
+        rootDir,
+        role: policy.role,
+        ageGroup: policy.ageGroup,
+        scopeType: policy.scopeType,
+        fileSearchEnabled: false,
+        contextMode: 'light',
+        disabledToolNames: [...TELEGRAM_VISION_DISABLED_TOOLS],
+        disableSession: true,
+        toolsConfig,
+      });
+      const finalOutput = String(result.finalOutput ?? '').trim() || '(no output)';
+
+      const rawCaption = input.caption?.trim();
+      const captionNote = rawCaption && rawCaption.length > 0 ? rawCaption : '(no caption)';
+      await appendScopedDailyNoteImpl(
+        { rootDir, scopeId },
+        `[user:image:${input.source}] ${captionNote} [file:${persisted.relativePath}]`,
+      );
+      await appendScopedDailyNoteImpl({ rootDir, scopeId }, `[prime] ${finalOutput}`);
+
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'prime.run.success',
+        data: {
+          channel: 'telegram',
+          action: 'vision',
+          userId,
+          scopeId,
+          source: input.source,
+          storedPath: persisted.relativePath,
+          finalOutput: result.finalOutput,
+        },
+      });
+
+      await ctx.reply(finalOutput);
+    } catch (err) {
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'prime.run.error',
+        data: {
+          channel: 'telegram',
+          action: 'vision',
+          userId,
+          scopeId,
+          source: input.source,
+          storedPath: persisted.relativePath,
+          error: serializeError(err),
+        },
+      });
+
+      await ctx.reply('Something went wrong while analyzing that image. Please try again.');
+    }
   };
 
   bot.on('message:text', async (ctx) => {
@@ -316,7 +821,7 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
             channel: 'telegram',
             userId,
             scopeId,
-            error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : String(err),
+            error: serializeError(err),
           },
         });
       }
@@ -341,6 +846,7 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
         fileSearchVectorStoreId: fileSearchVectorStoreId ?? undefined,
         fileSearchIncludeResults: fileMemory.includeSearchResults,
         fileSearchMaxNumResults: fileMemory.maxNumResults,
+        toolsConfig,
       });
       const finalOutput = String(result.finalOutput ?? '').trim() || '(no output)';
 
@@ -367,7 +873,7 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
         data: {
           channel: 'telegram',
           userId,
-          error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : String(err),
+          error: serializeError(err),
         },
       });
 
@@ -379,7 +885,11 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
     const document = ctx.message.document;
     if (!document) return;
 
+    const receivedAtMs = now().getTime();
+    const elapsedMs = () => Math.max(0, now().getTime() - receivedAtMs);
     const userId = String(ctx.from?.id ?? 'unknown');
+    const uploadId = buildUploadId(ctx, document);
+
     await writeLog({
       ts: now().toISOString(),
       type: 'telegram.update',
@@ -395,10 +905,54 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
       },
     });
 
+    await writeLog({
+      ts: now().toISOString(),
+      type: 'file.upload',
+      data: {
+        stage: 'received',
+        uploadId,
+        chatId: ctx.chat.id,
+        userId,
+        messageId: ctx.message.message_id,
+        telegramFileId: document.file_id,
+        telegramFileUniqueId: document.file_unique_id,
+        filename: document.file_name ?? null,
+        mimeType: document.mime_type ?? null,
+        declaredSizeBytes: document.file_size ?? null,
+      },
+    });
+
+    if (isImageMimeType(document.mime_type)) {
+      await handleVisionMessage(ctx, {
+        source: 'document',
+        uploadId,
+        fileId: document.file_id,
+        fileUniqueId: document.file_unique_id,
+        filename: document.file_name,
+        mimeType: document.mime_type,
+        declaredSizeBytes: document.file_size,
+        caption: ctx.message.caption,
+      });
+      return;
+    }
+
     const policy = await resolvePolicy(ctx, userId);
     if (!policy) return;
 
     if (!policy.allow) {
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'file.upload',
+        data: {
+          stage: 'policy_denied',
+          uploadId,
+          chatId: ctx.chat.id,
+          userId,
+          reason: policy.reason ?? 'unknown',
+          durationMs: elapsedMs(),
+        },
+      });
+
       if (policy.reason === 'unknown_user' && ctx.chat.type === 'private') {
         await ctx.reply(UNKNOWN_DM_REPLY);
       }
@@ -409,11 +963,39 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
     if (!scopeId) return;
 
     if (!fileMemory.enabled) {
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'file.upload',
+        data: {
+          stage: 'validation_failed',
+          uploadId,
+          chatId: ctx.chat.id,
+          userId,
+          scopeId,
+          reason: 'file_memory_disabled',
+          durationMs: elapsedMs(),
+        },
+      });
+
       await ctx.reply('File memory is disabled right now.');
       return;
     }
 
     if (!fileMemory.uploadEnabled) {
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'file.upload',
+        data: {
+          stage: 'validation_failed',
+          uploadId,
+          chatId: ctx.chat.id,
+          userId,
+          scopeId,
+          reason: 'upload_disabled',
+          durationMs: elapsedMs(),
+        },
+      });
+
       await ctx.reply('File uploads are disabled right now.');
       return;
     }
@@ -424,21 +1006,76 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
 
     const maxSizeBytes = fileMemory.maxFileSizeMb * 1024 * 1024;
     if (sizeBytes > maxSizeBytes) {
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'file.upload',
+        data: {
+          stage: 'validation_failed',
+          uploadId,
+          chatId: ctx.chat.id,
+          userId,
+          scopeId,
+          reason: 'metadata_size_exceeded',
+          filename,
+          mimeType,
+          sizeBytes,
+          maxSizeBytes,
+          durationMs: elapsedMs(),
+        },
+      });
+
       await ctx.reply(`That file is too large. Max allowed is ${fileMemory.maxFileSizeMb} MB.`);
       return;
     }
 
     if (!isAllowedExtension(filename, fileMemory.allowedExtensions)) {
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'file.upload',
+        data: {
+          stage: 'validation_failed',
+          uploadId,
+          chatId: ctx.chat.id,
+          userId,
+          scopeId,
+          reason: 'extension_not_allowed',
+          filename,
+          mimeType,
+          sizeBytes,
+          allowedExtensions: [...fileMemory.allowedExtensions],
+          durationMs: elapsedMs(),
+        },
+      });
+
       const allowed = fileMemory.allowedExtensions.join(', ');
       await ctx.reply(`Unsupported file type. Allowed extensions: ${allowed}.`);
       return;
     }
 
+    await writeLog({
+      ts: now().toISOString(),
+      type: 'file.upload',
+      data: {
+        stage: 'download_started',
+        uploadId,
+        chatId: ctx.chat.id,
+        userId,
+        scopeId,
+        filename,
+        mimeType,
+        sizeBytes,
+      },
+    });
+
     await ctx.reply(buildUploadDownloadMessage(filename));
 
     let downloaded: DownloadedTelegramFile;
     try {
-      downloaded = await downloadTelegramFileImpl(ctx, token);
+      downloaded = await downloadTelegramFileImpl({
+        ctx,
+        token,
+        fileId: document.file_id,
+      });
     } catch (err) {
       await writeLog({
         ts: now().toISOString(),
@@ -447,20 +1084,94 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
           channel: 'telegram',
           userId,
           scopeId,
-          error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : String(err),
+          action: 'file_upload',
+          uploadId,
+          filename,
+          error: serializeError(err),
         },
       });
+
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'file.upload',
+        data: {
+          stage: 'download_failed',
+          uploadId,
+          chatId: ctx.chat.id,
+          userId,
+          scopeId,
+          filename,
+          mimeType,
+          sizeBytes,
+          durationMs: elapsedMs(),
+          error: serializeError(err),
+        },
+      });
+
       await ctx.reply('Could not download that file from Telegram. Please try again.');
       return;
     }
 
     const downloadedSizeBytes = downloaded.bytes.byteLength;
+
+    await writeLog({
+      ts: now().toISOString(),
+      type: 'file.upload',
+      data: {
+        stage: 'downloaded',
+        uploadId,
+        chatId: ctx.chat.id,
+        userId,
+        scopeId,
+        filename,
+        mimeType,
+        sizeBytes,
+        downloadedSizeBytes,
+      },
+    });
+
     if (downloadedSizeBytes > maxSizeBytes) {
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'file.upload',
+        data: {
+          stage: 'validation_failed',
+          uploadId,
+          chatId: ctx.chat.id,
+          userId,
+          scopeId,
+          reason: 'downloaded_size_exceeded',
+          filename,
+          mimeType,
+          sizeBytes,
+          downloadedSizeBytes,
+          maxSizeBytes,
+          durationMs: elapsedMs(),
+        },
+      });
+
       await ctx.reply(`That file is too large. Max allowed is ${fileMemory.maxFileSizeMb} MB.`);
       return;
     }
 
     const effectiveSizeBytes = sizeBytes > 0 ? sizeBytes : downloadedSizeBytes;
+
+    await writeLog({
+      ts: now().toISOString(),
+      type: 'file.upload',
+      data: {
+        stage: 'index_started',
+        uploadId,
+        chatId: ctx.chat.id,
+        userId,
+        scopeId,
+        filename,
+        mimeType,
+        sizeBytes: effectiveSizeBytes,
+        maxFilesPerScope: fileMemory.maxFilesPerScope,
+        pollIntervalMs: fileMemory.pollIntervalMs,
+      },
+    });
 
     await ctx.reply(buildUploadIndexingMessage(filename));
 
@@ -487,12 +1198,36 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
             channel: 'telegram',
             userId,
             scopeId,
+            action: 'file_upload',
+            uploadId,
+            filename,
             error: {
               name: 'FileMemoryIndexError',
               message: result.message,
             },
           },
         });
+
+        await writeLog({
+          ts: now().toISOString(),
+          type: 'file.upload',
+          data: {
+            stage: 'index_failed',
+            uploadId,
+            chatId: ctx.chat.id,
+            userId,
+            scopeId,
+            filename,
+            mimeType,
+            sizeBytes: effectiveSizeBytes,
+            durationMs: elapsedMs(),
+            error: {
+              name: 'FileMemoryIndexError',
+              message: result.message,
+            },
+          },
+        });
+
         await ctx.reply(buildUploadIndexFailureMessage(result.message));
         return;
       }
@@ -505,7 +1240,24 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
           userId,
           scopeId,
           action: 'file_upload',
+          uploadId,
           filename: result.filename,
+        },
+      });
+
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'file.upload',
+        data: {
+          stage: 'completed',
+          uploadId,
+          chatId: ctx.chat.id,
+          userId,
+          scopeId,
+          filename: result.filename,
+          mimeType,
+          sizeBytes: effectiveSizeBytes,
+          durationMs: elapsedMs(),
         },
       });
 
@@ -518,12 +1270,69 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
           channel: 'telegram',
           userId,
           scopeId,
-          error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : String(err),
+          action: 'file_upload',
+          uploadId,
+          filename,
+          error: serializeError(err),
+        },
+      });
+
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'file.upload',
+        data: {
+          stage: 'index_failed',
+          uploadId,
+          chatId: ctx.chat.id,
+          userId,
+          scopeId,
+          filename,
+          mimeType,
+          sizeBytes: effectiveSizeBytes,
+          durationMs: elapsedMs(),
+          error: serializeError(err),
         },
       });
 
       await ctx.reply('Could not index that file right now. Please try again.');
     }
+  });
+
+  bot.on('message:photo', async (ctx) => {
+    const photoSizes = ctx.message.photo;
+    if (!photoSizes || photoSizes.length === 0) return;
+
+    const userId = String(ctx.from?.id ?? 'unknown');
+    const largestPhoto = getLargestPhotoSize(photoSizes);
+    const uploadId = `${ctx.chat.id}:${ctx.message.message_id}:${largestPhoto.file_unique_id}`;
+
+    await writeLog({
+      ts: now().toISOString(),
+      type: 'telegram.update',
+      data: {
+        chatId: ctx.chat.id,
+        userId,
+        messageId: ctx.message.message_id,
+        photoCount: photoSizes.length,
+        fileId: largestPhoto.file_id,
+        fileUniqueId: largestPhoto.file_unique_id,
+        sizeBytes: largestPhoto.file_size ?? null,
+        width: largestPhoto.width,
+        height: largestPhoto.height,
+      },
+    });
+    await handleVisionMessage(ctx, {
+      source: 'photo',
+      uploadId,
+      fileId: largestPhoto.file_id,
+      fileUniqueId: largestPhoto.file_unique_id,
+      filename: undefined,
+      mimeType: undefined,
+      declaredSizeBytes: largestPhoto.file_size,
+      caption: ctx.message.caption,
+      width: largestPhoto.width,
+      height: largestPhoto.height,
+    });
   });
 
   bot.catch(async (err) => {

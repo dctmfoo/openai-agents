@@ -75,6 +75,29 @@ describe('prime tool registry', () => {
     expect(names).not.toContain(TOOL_NAMES.fileSearch);
   });
 
+  it('omits disabled retrieval tools for vision turns', () => {
+    const ctx: PrimeContext = {
+      rootDir: '/root',
+      scopeId: 'telegram:dm:wags',
+      role: 'parent',
+      scopeType: 'dm',
+      channel: 'telegram',
+      fileSearchEnabled: true,
+      fileSearchVectorStoreId: 'vs_123',
+      fileSearchIncludeResults: false,
+      fileSearchMaxNumResults: 5,
+      disabledToolNames: [TOOL_NAMES.semanticSearch, TOOL_NAMES.fileSearch],
+    };
+
+    const tools = buildPrimeTools(ctx);
+    const names = tools.map((tool) => tool.name);
+
+    expect(names).not.toContain(TOOL_NAMES.semanticSearch);
+    expect(names).not.toContain(TOOL_NAMES.fileSearch);
+    expect(names).toContain(TOOL_NAMES.readScopedMemory);
+    expect(names).toContain(TOOL_NAMES.rememberDaily);
+  });
+
   describe('config-driven shell tool', () => {
     const shellToolsConfig: ToolsConfig = {
       shell: {
