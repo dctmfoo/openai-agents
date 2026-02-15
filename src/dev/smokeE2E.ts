@@ -144,7 +144,8 @@ async function main() {
       runPrime: async (input, opts) => {
         const scopeId = opts?.scopeId ?? 'telegram:dm:wags';
         const session = store.getOrCreate(scopeId);
-        await session.addItems([userMessage(input)]);
+        const textInput = typeof input === 'string' ? input : '[multimodal input]';
+        await session.addItems([userMessage(textInput)]);
         return { finalOutput: 'smoke reply', raw: null as any };
       },
     },

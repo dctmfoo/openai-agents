@@ -62,6 +62,7 @@ const start = async () => {
     rootDir,
     haloHome,
     fileMemory: haloConfig.fileMemory,
+    toolsConfig: haloConfig.tools,
     deps: {
       runPrime: (input, opts) => {
         return import('../../prime/prime.js').then(({ runPrime }) =>

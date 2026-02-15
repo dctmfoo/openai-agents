@@ -107,6 +107,7 @@ export async function startGateway(options: GatewayOptions) {
     token: telegramConfig.token,
     logDir: telegramConfig.logDir,
     rootDir: telegramConfig.rootDir,
+    toolsConfig: options.config?.tools,
     fileMemory: {
       enabled: options.config?.fileMemory?.enabled ?? false,
       uploadEnabled: options.config?.fileMemory?.uploadEnabled ?? false,

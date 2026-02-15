@@ -8,7 +8,8 @@ export type EventLogRecord = {
     | 'prime.run.start'
     | 'prime.run.success'
     | 'prime.run.error'
-    | 'memory.daily.append';
+    | 'memory.daily.append'
+    | 'file.upload';
   data: Record<string, unknown>;
 };
 

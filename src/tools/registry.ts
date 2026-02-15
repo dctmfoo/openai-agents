@@ -38,19 +38,20 @@ export function buildPrimeTools(context: PrimeContext): Tool<PrimeContext>[] {
     context.toolsConfig?.access,
   );
   const allowed = policy.allowedToolNames;
+  const disabled = new Set(context.disabledToolNames ?? []);
 
   const tools = Object.entries(STATIC_TOOL_REGISTRY)
-    .filter(([name]) => allowed.has(name as StaticToolName))
+    .filter(([name]) => allowed.has(name as StaticToolName) && !disabled.has(name as StaticToolName))
     .map(([, tool]) => tool);
 
-  if (allowed.has(TOOL_NAMES.fileSearch)) {
+  if (allowed.has(TOOL_NAMES.fileSearch) && !disabled.has(TOOL_NAMES.fileSearch)) {
     const fileSearch = buildHostedFileSearchTool(context);
     if (fileSearch) {
       tools.push(fileSearch);
     }
   }
 
-  if (allowed.has(TOOL_NAMES.shell)) {
+  if (allowed.has(TOOL_NAMES.shell) && !disabled.has(TOOL_NAMES.shell)) {
     const shellConfig = context.toolsConfig?.shell;
     const role = context.role;
     if (shellConfig && role) {

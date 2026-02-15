@@ -71,8 +71,10 @@ pnpm start:gateway
 - Family config is loaded once at startup; restart to pick up changes.
 - `OPENAI_API_KEY` is required for real model calls (smoke tests stub the model).
 - Semantic memory background sync is built-in for active scopes when `semanticMemory.enabled=true`; cadence is `semanticMemory.syncIntervalMinutes`.
-- Telegram `message:document` uploads are enabled only when `fileMemory.enabled=true` and `fileMemory.uploadEnabled=true`.
+- Telegram image messages are routed to direct vision analysis (`message:photo` and image `message:document` with `mime_type=image/*`).
+- Non-image `message:document` uploads are enabled only when `fileMemory.enabled=true` and `fileMemory.uploadEnabled=true`.
 - During upload flow, users receive stage updates (download started, indexing started, final success/failure).
+- Upload/vision telemetry is also written as structured `file.upload` events in `events.jsonl`.
 - Optional retention cleanup can be enabled via `fileMemory.retention.enabled=true` in `HALO_HOME/config.json` (with optional `policyPreset`, `allowScopeIds`, and `denyScopeIds` controls; role-based presets use `family.json` member roles).
 
 Gateway admin exposes:
