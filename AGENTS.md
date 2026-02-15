@@ -55,6 +55,20 @@ Copy `.env.example` → `.env` and set:
 - `TELEGRAM_BOT_TOKEN`
 - `HALO_HOME` (optional) — durable runtime state root; defaults to `~/.halo`.
 
+## Communication preference (required)
+
+When explaining work to Wags (or other non-implementation stakeholders), be **functional-first**:
+
+1. **Direct answer first** (yes/no or recommendation in the first line).
+2. **Functional impact** (what changes in behavior for users/operators).
+3. **Why it matters** (risk reduced, failure mode avoided, or outcome improved).
+4. **Implementation details last** (files/code only after the functional summary).
+
+Style rules:
+- Avoid leading with file names, code paths, or internal jargon.
+- Prefer plain language and concrete behavior.
+- If tradeoffs exist, present options briefly and clearly mark the recommendation.
+
 ## Style & engineering rules
 
 - Prefer **OpenAI Agents SDK primitives** over custom frameworks.
@@ -63,9 +77,19 @@ Copy `.env.example` → `.env` and set:
   - sessions/compaction
   - memory distillation
   - evals
-- Avoid cleverness. Optimize for clarity.
-- Don't claim actions you didn't take.
+- Avoid cleverness. Optimize for clarity and teachability.
+- Don’t claim actions you didn’t take.
 - Never persist obvious secrets in memory files.
+
+## Simplicity constraints (required)
+
+- **No nested ternaries** — use `if/else` or `switch` for multi-branch logic.
+- **No dense one-liners** — break compound operations into named steps.
+- **Early returns over deep nesting** — guard clauses first, happy path flat below.
+- **One responsibility per function** — split functions that do multiple jobs.
+- **Flatten async flows** — prefer `async/await` over nested `.then()` chains.
+- **No dead code** — remove unused imports, commented blocks, and unreachable branches.
+- **Comments explain why, not what** — if a comment explains what, simplify the code.
 
 ## Memory model (markdown files)
 
@@ -77,49 +101,51 @@ Current:
 - **OpenAIResponsesCompactionSession** (Responses API `/responses/compact`) when compaction is enabled.
 - A deterministic memory distiller writes lasting vs temporal facts into scoped markdown files.
 
-## Contribution workflow
+## Mandatory contributor workflow
+
+### 1) Small, reviewable slices (required)
 
 - Keep changes small and reviewable.
-- If you add a feature, add a minimal doc note in `docs/`.
+- If behavior changes, add/update docs in `docs/` in the same PR.
 - Prefer Conventional Commits:
   - `feat: …`, `fix: …`, `docs: …`, `chore: …`
+
+### 2) TDD first (required)
+
+Follow **red → green → refactor** in vertical slices:
+
+1. Define one behavior change through a public interface.
+2. **RED:** write one failing test for that behavior.
+3. **GREEN:** implement the minimal change to pass that test.
+4. Repeat one test / one implementation step at a time.
+5. **REFACTOR:** clean structure only after tests are green.
+
+Rules:
+- No horizontal slicing (don’t write many tests upfront then bulk implement).
+- Test behavior, not implementation internals.
+- Mock only true boundaries (external APIs, filesystem, time/randomness, etc.).
+- If a flow is hard to test (e.g., Telegram network), isolate pure logic and test that module.
+
+### 3) Verification discipline (required)
+
+Use fast loops while developing, then run full gates before handoff/merge.
+
+- During development: run focused tests for touched modules.
+- Before handoff/merge, always run:
+  - `pnpm test`
+  - `pnpm build`
+  - `pnpm check:deadcode`
+- For policy/tooling refactors, also run:
+  - `pnpm check:complexity`
+
+Quality bar:
+- Prime behavior stays consistent.
+- Memory writeback rules don’t regress.
+- Safety boundaries remain enforced.
 
 ## Ralph runner (Codex loop)
 
 - `scripts/ralph/ralph.sh` expects `prd.json` with `branchName` and `userStories` (array of story objects with `id` + `passes`).
-
-## Test-Driven Development (TDD)
-
-This repo follows **TDD** wherever feasible:
-
-- Write a failing test first (red)
-- Implement the minimal change to pass (green)
-- Refactor for clarity (clean)
-
-If a change is hard to test (e.g., depends on Telegram network), isolate logic into pure functions/modules and test those.
-
-## Testing / evals
-
-We keep two layers of tests:
-
-1) **Deterministic tests** (fast, required)
-- file/memory merge & dedupe logic
-- session persistence adapters
-- tool policy decisions (allow/deny)
-
-2) **Behavioral evals** (slower, targeted)
-- LLM-as-judge checks for tone/consistency
-- regression prompts for memory distillation
-
-Commands:
-
-- `pnpm test` — unit tests
-- `pnpm evals` — behavioral evals (planned)
-
-Quality bar:
-- Prime behavior stays consistent.
-- Memory writeback rules don't regress.
-- Safety boundaries remain enforced.
 
 ## Work in progress
 
