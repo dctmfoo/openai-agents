@@ -136,4 +136,108 @@ describe('haloConfig', () => {
       },
     });
   });
+
+  it('defaults tools section when omitted', async () => {
+    const haloHome = await mkdtemp(path.join(tmpdir(), 'halo-config-'));
+
+    await writeFile(
+      path.join(haloHome, 'config.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        gateway: { host: '127.0.0.1', port: 8787 },
+        features: { compactionEnabled: false, distillationEnabled: false },
+        memory: {
+          distillationEveryNItems: 20,
+          distillationMaxItems: 200,
+          distillationMode: 'deterministic',
+        },
+        childSafe: { enabled: true, maxMessageLength: 800, blockedTopics: [] },
+        semanticMemory: {
+          enabled: false,
+          embeddingProvider: 'openai',
+          embeddingModel: 'text-embedding-3-small',
+          embeddingDimensions: 1536,
+          syncIntervalMinutes: 15,
+          search: { fusionMethod: 'rrf', vectorWeight: 0.7, textWeight: 0.3, minScore: 0.005 },
+        },
+      }),
+      'utf8',
+    );
+
+    const config = await loadHaloConfig({ HALO_HOME: haloHome } as NodeJS.ProcessEnv);
+
+    expect(config.tools).toEqual({
+      shell: {
+        enabled: false,
+        timeoutMs: 30000,
+        maxOutputLength: 4096,
+        commandPolicy: {
+          parent: { allowedPatterns: [], blockedPatterns: [] },
+          child: { allowedPatterns: [], blockedPatterns: [] },
+        },
+      },
+      access: { parent: {}, child: {} },
+    });
+  });
+
+  it('loads shell config with patterns', async () => {
+    const haloHome = await mkdtemp(path.join(tmpdir(), 'halo-config-'));
+
+    await writeFile(
+      path.join(haloHome, 'config.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        gateway: { host: '127.0.0.1', port: 8787 },
+        features: { compactionEnabled: false, distillationEnabled: false },
+        memory: {
+          distillationEveryNItems: 20,
+          distillationMaxItems: 200,
+          distillationMode: 'deterministic',
+        },
+        childSafe: { enabled: true, maxMessageLength: 800, blockedTopics: [] },
+        semanticMemory: {
+          enabled: false,
+          embeddingProvider: 'openai',
+          embeddingModel: 'text-embedding-3-small',
+          embeddingDimensions: 1536,
+          syncIntervalMinutes: 15,
+          search: { fusionMethod: 'rrf', vectorWeight: 0.7, textWeight: 0.3, minScore: 0.005 },
+        },
+        tools: {
+          shell: {
+            enabled: true,
+            timeoutMs: 10000,
+            maxOutputLength: 2048,
+            commandPolicy: {
+              parent: {
+                allowedPatterns: ['^ls\\b', '^echo\\b'],
+                blockedPatterns: ['sudo', 'rm\\s+-rf'],
+              },
+              child: {
+                allowedPatterns: ['^date$'],
+                blockedPatterns: [],
+              },
+            },
+          },
+          access: {
+            parent: {
+              dm: { allowedTools: ['web_search_call', 'shell'] },
+            },
+            child: {},
+          },
+        },
+      }),
+      'utf8',
+    );
+
+    const config = await loadHaloConfig({ HALO_HOME: haloHome } as NodeJS.ProcessEnv);
+
+    expect(config.tools.shell.enabled).toBe(true);
+    expect(config.tools.shell.timeoutMs).toBe(10000);
+    expect(config.tools.shell.maxOutputLength).toBe(2048);
+    expect(config.tools.shell.commandPolicy.parent.allowedPatterns).toEqual(['^ls\\b', '^echo\\b']);
+    expect(config.tools.shell.commandPolicy.parent.blockedPatterns).toEqual(['sudo', 'rm\\s+-rf']);
+    expect(config.tools.shell.commandPolicy.child.allowedPatterns).toEqual(['^date$']);
+    expect(config.tools.access.parent.dm).toEqual({ allowedTools: ['web_search_call', 'shell'] });
+  });
 });

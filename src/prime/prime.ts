@@ -1,6 +1,7 @@
 import { Agent, run } from '@openai/agents';
 import process from 'node:process';
 import { loadScopedContextFiles } from '../memory/scopedMemory.js';
+import type { ToolsConfig } from '../runtime/haloConfig.js';
 import { defaultSessionStore, type SessionStore } from '../sessions/sessionStore.js';
 import { buildPrimeTools } from '../tools/registry.js';
 import { TOOL_NAMES } from '../tools/toolNames.js';
@@ -24,6 +25,7 @@ export type PrimeRunOptions = {
   fileSearchVectorStoreId?: string;
   fileSearchIncludeResults?: boolean;
   fileSearchMaxNumResults?: number;
+  toolsConfig?: ToolsConfig;
 };
 
 const buildToolInstructions = (toolNames: string[]) => {
@@ -56,6 +58,12 @@ const buildToolInstructions = (toolNames: string[]) => {
   if (toolNames.includes(TOOL_NAMES.fileSearch)) {
     instructions.push(
       'Use file_search for questions about uploaded documents. Use semantic_search for chat-memory recall.',
+    );
+  }
+
+  if (toolNames.includes(TOOL_NAMES.shell)) {
+    instructions.push(
+      'You can run shell commands using the shell tool. Only pre-approved commands will execute.',
     );
   }
 
@@ -161,6 +169,7 @@ export async function runPrime(input: string, opts: PrimeRunOptions = {}) {
     fileSearchVectorStoreId: opts.fileSearchVectorStoreId,
     fileSearchIncludeResults: opts.fileSearchIncludeResults,
     fileSearchMaxNumResults: opts.fileSearchMaxNumResults,
+    toolsConfig: opts.toolsConfig,
   };
 
   const agent = await makePrimeAgent(context);

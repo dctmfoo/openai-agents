@@ -8,6 +8,78 @@ import { FAMILY_CONFIG_SCHEMA } from './familyConfig.js';
 
 const HALO_CONFIG_SCHEMA_VERSION = 1;
 
+const SHELL_COMMAND_POLICY_SCHEMA = z.object({
+  allowedPatterns: z.array(z.string()).default([]),
+  blockedPatterns: z.array(z.string()).default([]),
+});
+
+const SHELL_TOOL_CONFIG_SCHEMA = z
+  .object({
+    enabled: z.boolean().default(false),
+    timeoutMs: z.number().int().positive().default(30000),
+    maxOutputLength: z.number().int().positive().default(4096),
+    cwd: z.string().optional(),
+    commandPolicy: z
+      .object({
+        parent: SHELL_COMMAND_POLICY_SCHEMA.default({
+          allowedPatterns: [],
+          blockedPatterns: [],
+        }),
+        child: SHELL_COMMAND_POLICY_SCHEMA.default({
+          allowedPatterns: [],
+          blockedPatterns: [],
+        }),
+      })
+      .default({
+        parent: { allowedPatterns: [], blockedPatterns: [] },
+        child: { allowedPatterns: [], blockedPatterns: [] },
+      }),
+  })
+  .default({
+    enabled: false,
+    timeoutMs: 30000,
+    maxOutputLength: 4096,
+    commandPolicy: {
+      parent: { allowedPatterns: [], blockedPatterns: [] },
+      child: { allowedPatterns: [], blockedPatterns: [] },
+    },
+  });
+
+const ROLE_TOOL_ACCESS_SCHEMA = z.object({
+  allowedTools: z.array(z.string()).optional(),
+  blockedTools: z.array(z.string()).optional(),
+});
+
+const SCOPE_TOOL_ACCESS_SCHEMA = z.record(z.string(), ROLE_TOOL_ACCESS_SCHEMA).default({});
+
+const TOOL_ACCESS_SCHEMA = z
+  .object({
+    parent: SCOPE_TOOL_ACCESS_SCHEMA,
+    child: z.record(z.string(), SCOPE_TOOL_ACCESS_SCHEMA).default({}),
+  })
+  .default({
+    parent: {},
+    child: {},
+  });
+
+const TOOLS_CONFIG_SCHEMA = z
+  .object({
+    shell: SHELL_TOOL_CONFIG_SCHEMA,
+    access: TOOL_ACCESS_SCHEMA,
+  })
+  .default({
+    shell: {
+      enabled: false,
+      timeoutMs: 30000,
+      maxOutputLength: 4096,
+      commandPolicy: {
+        parent: { allowedPatterns: [], blockedPatterns: [] },
+        child: { allowedPatterns: [], blockedPatterns: [] },
+      },
+    },
+    access: { parent: {}, child: {} },
+  });
+
 const FILE_MEMORY_RETENTION_SCHEMA = z
   .object({
     enabled: z.boolean().default(false),
@@ -162,11 +234,16 @@ const HALO_CONFIG_SCHEMA = z.object({
 
   fileMemory: FILE_MEMORY_CONFIG_SCHEMA,
 
+  tools: TOOLS_CONFIG_SCHEMA,
+
   family: FAMILY_CONFIG_SCHEMA.optional(),
 });
 
 export type HaloConfig = z.infer<typeof HALO_CONFIG_SCHEMA>;
 export type FileMemoryConfig = HaloConfig['fileMemory'];
+export type ToolsConfig = HaloConfig['tools'];
+export type ShellToolConfig = ToolsConfig['shell'];
+export type ToolAccessConfig = ToolsConfig['access'];
 
 function getHaloConfigPath(env: NodeJS.ProcessEnv): string {
   const haloHome = getHaloHome(env);

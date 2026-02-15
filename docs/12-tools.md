@@ -9,8 +9,19 @@ Tools are deny-by-default. Every tool must be explicitly registered and allowlis
 - `remember_daily` (append a scoped daily note)
 - `semantic_search` (local semantic retrieval from scoped index)
 - `file_search` (hosted OpenAI file search; enabled only when scope has a vector store and `fileMemory.enabled=true`)
+- `shell` (local shell execution; enabled only when `tools.shell.enabled=true`, role command patterns are configured, and policy allowlists include `shell`)
 
 Tool availability still depends on policy (`src/policies/toolPolicy.ts`).
+
+## Shell tool notes
+
+Shell access is deny-by-default with three gates:
+
+1. `tools.shell.enabled` must be `true`
+2. `tools.access` for the active role/scope must include `"shell"` in `allowedTools`
+3. The role-specific `commandPolicy.<role>.allowedPatterns` must match the requested command (and `blockedPatterns` are always enforced first)
+
+Allowlisting `"gog"` (or any other command name) in tool policy does **not** enable shell execution. The tool name is always `"shell"`; command-level control happens only via regex patterns.
 
 ## Registering a tool
 

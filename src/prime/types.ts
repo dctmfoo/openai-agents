@@ -1,4 +1,5 @@
 import type { ToolPolicyContext } from '../policies/toolPolicy.js';
+import type { ToolsConfig } from '../runtime/haloConfig.js';
 
 export type PrimeContext = ToolPolicyContext & {
   rootDir: string;
@@ -9,4 +10,5 @@ export type PrimeContext = ToolPolicyContext & {
   fileSearchVectorStoreId?: string;
   fileSearchIncludeResults?: boolean;
   fileSearchMaxNumResults?: number;
+  toolsConfig?: ToolsConfig;
 };

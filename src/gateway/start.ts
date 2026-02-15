@@ -62,6 +62,7 @@ const start = async () => {
       childSafe: haloConfig.childSafe,
       semanticMemory: haloConfig.semanticMemory,
       fileMemory: haloConfig.fileMemory,
+      tools: haloConfig.tools,
     },
   });
 };

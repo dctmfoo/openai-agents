@@ -1,3 +1,4 @@
+import type { ToolAccessConfig } from '../runtime/haloConfig.js';
 import { TOOL_NAMES, type ToolName } from '../tools/toolNames.js';
 
 export type ToolPolicyContext = {
@@ -13,6 +14,8 @@ export type ToolPolicyDecision = {
 type Role = NonNullable<ToolPolicyContext['role']>;
 type ScopeType = NonNullable<ToolPolicyContext['scopeType']>;
 type AgeGroup = NonNullable<ToolPolicyContext['ageGroup']>;
+
+const TOOL_NAME_SET = new Set<ToolName>(Object.values(TOOL_NAMES));
 
 const PARENT_ALLOWLIST: Record<ScopeType, ToolName[]> = {
   dm: [
@@ -63,10 +66,62 @@ const CHILD_ALLOWLIST: Record<AgeGroup, Record<ScopeType, ToolName[]>> = {
   },
 };
 
-export function resolveToolPolicy(context: ToolPolicyContext): ToolPolicyDecision {
+function toToolSet(allowedTools?: string[], blockedTools?: string[]): Set<ToolName> | null {
+  if (!allowedTools) return null;
+
+  const allowed = new Set<ToolName>();
+  for (const tool of allowedTools) {
+    if (TOOL_NAME_SET.has(tool as ToolName)) {
+      allowed.add(tool as ToolName);
+    }
+  }
+
+  if (blockedTools) {
+    for (const tool of blockedTools) {
+      if (TOOL_NAME_SET.has(tool as ToolName)) {
+        allowed.delete(tool as ToolName);
+      }
+    }
+  }
+
+  return allowed;
+}
+
+function resolveFromConfig(
+  role: Role,
+  scopeType: ScopeType,
+  ageGroup: AgeGroup | undefined,
+  accessConfig: ToolAccessConfig,
+): ToolPolicyDecision | null {
+  if (role === 'parent') {
+    const scopeAccess = accessConfig.parent?.[scopeType];
+    const allowed = toToolSet(scopeAccess?.allowedTools, scopeAccess?.blockedTools);
+    if (!allowed) return null;
+    return { allowedToolNames: allowed };
+  }
+
+  const group = ageGroup ?? 'child';
+  const childGroup = accessConfig.child?.[group];
+  if (!childGroup) return null;
+  const scopeAccess = childGroup[scopeType];
+  const allowed = toToolSet(scopeAccess?.allowedTools, scopeAccess?.blockedTools);
+  if (!allowed) return null;
+
+  return { allowedToolNames: allowed };
+}
+
+export function resolveToolPolicy(
+  context: ToolPolicyContext,
+  toolAccessConfig?: ToolAccessConfig,
+): ToolPolicyDecision {
   const { role, scopeType, ageGroup } = context;
   if (!role || !scopeType) {
     return { allowedToolNames: new Set() };
+  }
+
+  if (toolAccessConfig) {
+    const fromConfig = resolveFromConfig(role, scopeType, ageGroup, toolAccessConfig);
+    if (fromConfig) return fromConfig;
   }
 
   if (role === 'parent') {

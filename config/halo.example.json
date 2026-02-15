@@ -53,5 +53,26 @@
       "denyScopeIds": [],
       "policyPreset": "exclude_children"
     }
+  },
+  "tools": {
+    "shell": {
+      "enabled": false,
+      "timeoutMs": 30000,
+      "maxOutputLength": 4096,
+      "commandPolicy": {
+        "parent": {
+          "allowedPatterns": [],
+          "blockedPatterns": []
+        },
+        "child": {
+          "allowedPatterns": [],
+          "blockedPatterns": []
+        }
+      }
+    },
+    "access": {
+      "parent": {},
+      "child": {}
+    }
   }
 }
