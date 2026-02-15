@@ -1,5 +1,6 @@
 import sonarjs from "eslint-plugin-sonarjs";
 import tsParser from "@typescript-eslint/parser";
+import globals from "globals";
 
 const complexityThreshold = 15;
 
@@ -18,6 +19,9 @@ export default [
       parser: tsParser,
       ecmaVersion: "latest",
       sourceType: "module",
+      globals: {
+        ...globals.node,
+      },
     },
     plugins: {
       sonarjs,
