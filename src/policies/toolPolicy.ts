@@ -1,3 +1,4 @@
+import type { ToolAccessConfig } from '../runtime/haloConfig.js';
 import { TOOL_NAMES, type ToolName } from '../tools/toolNames.js';
 
 export type ToolPolicyContext = {
@@ -63,10 +64,50 @@ const CHILD_ALLOWLIST: Record<AgeGroup, Record<ScopeType, ToolName[]>> = {
   },
 };
 
-export function resolveToolPolicy(context: ToolPolicyContext): ToolPolicyDecision {
+function resolveFromConfig(
+  role: Role,
+  scopeType: ScopeType,
+  ageGroup: AgeGroup | undefined,
+  accessConfig: ToolAccessConfig,
+): ToolPolicyDecision | null {
+  if (role === 'parent') {
+    const scopeAccess = accessConfig.parent?.[scopeType];
+    if (!scopeAccess?.allowedTools) return null;
+    let allowed = new Set<string>(scopeAccess.allowedTools);
+    if (scopeAccess.blockedTools) {
+      for (const tool of scopeAccess.blockedTools) {
+        allowed.delete(tool);
+      }
+    }
+    return { allowedToolNames: allowed as Set<ToolName> };
+  }
+
+  const group = ageGroup ?? 'child';
+  const childGroup = accessConfig.child?.[group];
+  if (!childGroup) return null;
+  const scopeAccess = childGroup[scopeType];
+  if (!scopeAccess?.allowedTools) return null;
+  let allowed = new Set<string>(scopeAccess.allowedTools);
+  if (scopeAccess.blockedTools) {
+    for (const tool of scopeAccess.blockedTools) {
+      allowed.delete(tool);
+    }
+  }
+  return { allowedToolNames: allowed as Set<ToolName> };
+}
+
+export function resolveToolPolicy(
+  context: ToolPolicyContext,
+  toolAccessConfig?: ToolAccessConfig,
+): ToolPolicyDecision {
   const { role, scopeType, ageGroup } = context;
   if (!role || !scopeType) {
     return { allowedToolNames: new Set() };
+  }
+
+  if (toolAccessConfig) {
+    const fromConfig = resolveFromConfig(role, scopeType, ageGroup, toolAccessConfig);
+    if (fromConfig) return fromConfig;
   }
 
   if (role === 'parent') {

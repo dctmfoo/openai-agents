@@ -1,5 +1,6 @@
 import { createTelegramAdapter } from '../interfaces/telegram/bot.js';
 import { resolveVersion, startAdminServer } from './admin.js';
+import type { ToolsConfig } from '../runtime/haloConfig.js';
 import { defaultSessionStore, SessionStore } from '../sessions/sessionStore.js';
 import { createSemanticSyncScheduler } from '../memory/semanticSyncScheduler.js';
 import { createFileMemoryRetentionScheduler } from '../files/fileMemoryRetentionScheduler.js';
@@ -70,6 +71,7 @@ export type GatewayOptions = {
         policyPreset?: 'all' | 'parents_only' | 'exclude_children' | 'custom';
       };
     };
+    tools?: ToolsConfig;
   };
 };
 
@@ -105,6 +107,7 @@ export async function startGateway(options: GatewayOptions) {
     token: telegramConfig.token,
     logDir: telegramConfig.logDir,
     rootDir: telegramConfig.rootDir,
+    toolsConfig: options.config?.tools,
     fileMemory: {
       enabled: options.config?.fileMemory?.enabled ?? false,
       uploadEnabled: options.config?.fileMemory?.uploadEnabled ?? false,
@@ -141,6 +144,7 @@ export async function startGateway(options: GatewayOptions) {
         return import('../prime/prime.js').then(({ runPrime }) =>
           runPrime(input, {
             ...opts,
+            toolsConfig: options.config?.tools,
             sessionStore,
           }),
         );

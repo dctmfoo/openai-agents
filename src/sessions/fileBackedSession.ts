@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { getHaloHome } from '../runtime/haloHome.js';
+import { sanitizeSessionItems } from './sanitizeSessionItems.js';
 import { hashSessionId } from './sessionHash.js';
 
 export type FileBackedSessionOptions = {
@@ -34,16 +35,18 @@ export class FileBackedSession implements Session {
   async getItems(limit?: number): Promise<AgentInputItem[]> {
     await this.ready;
 
+    const clean = sanitizeSessionItems(this.items);
+
     if (limit === undefined) {
-      return this.items.map(cloneAgentItem);
+      return clean.map(cloneAgentItem);
     }
 
     if (limit <= 0) {
       return [];
     }
 
-    const start = Math.max(this.items.length - limit, 0);
-    return this.items.slice(start).map(cloneAgentItem);
+    const start = Math.max(clean.length - limit, 0);
+    return clean.slice(start).map(cloneAgentItem);
   }
 
   async addItems(items: AgentInputItem[]): Promise<void> {

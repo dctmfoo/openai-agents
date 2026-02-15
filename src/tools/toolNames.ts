@@ -4,6 +4,7 @@ export const TOOL_NAMES = {
   rememberDaily: 'remember_daily',
   semanticSearch: 'semantic_search',
   fileSearch: 'file_search',
+  shell: 'shell',
 } as const;
 
 export type ToolName = (typeof TOOL_NAMES)[keyof typeof TOOL_NAMES];

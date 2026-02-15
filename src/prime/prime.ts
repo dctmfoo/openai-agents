@@ -1,9 +1,10 @@
-import { Agent, run } from '@openai/agents';
+import { Agent, run, type AgentInputItem } from '@openai/agents';
 import process from 'node:process';
 import { loadScopedContextFiles } from '../memory/scopedMemory.js';
+import type { ToolsConfig } from '../runtime/haloConfig.js';
 import { defaultSessionStore, type SessionStore } from '../sessions/sessionStore.js';
 import { buildPrimeTools } from '../tools/registry.js';
-import { TOOL_NAMES } from '../tools/toolNames.js';
+import { TOOL_NAMES, type ToolName } from '../tools/toolNames.js';
 import { filterResponse } from '../policies/contentFilter.js';
 import type { PrimeContext } from './types.js';
 
@@ -24,6 +25,14 @@ export type PrimeRunOptions = {
   fileSearchVectorStoreId?: string;
   fileSearchIncludeResults?: boolean;
   fileSearchMaxNumResults?: number;
+  contextMode?: 'full' | 'light';
+  disabledToolNames?: ToolName[];
+  toolsConfig?: ToolsConfig;
+  /**
+   * Skip session-backed history for this run.
+   * Useful for large multimodal payloads that should not bloat long-lived sessions.
+   */
+  disableSession?: boolean;
 };
 
 const buildToolInstructions = (toolNames: string[]) => {
@@ -56,6 +65,12 @@ const buildToolInstructions = (toolNames: string[]) => {
   if (toolNames.includes(TOOL_NAMES.fileSearch)) {
     instructions.push(
       'Use file_search for questions about uploaded documents. Use semantic_search for chat-memory recall.',
+    );
+  }
+
+  if (toolNames.includes(TOOL_NAMES.shell)) {
+    instructions.push(
+      'You can run shell commands using the shell tool. Only pre-approved commands will execute.',
     );
   }
 
@@ -113,15 +128,16 @@ async function makePrimeAgent(context: PrimeContext) {
     rootDir: context.rootDir,
     scopeId: context.scopeId,
   });
+  const includeMemoryContext = context.contextMode !== 'light';
 
   const contextBlock = [
     '---',
     'Context files (read-only excerpts):',
     ctx.soul ? `\n[SOUL.md]\n${ctx.soul}` : '',
     ctx.user ? `\n[USER.md]\n${ctx.user}` : '',
-    ctx.longTerm ? `\n[MEMORY.md]\n${ctx.longTerm}` : '',
-    ctx.yesterday ? `\n[memory/yesterday]\n${ctx.yesterday}` : '',
-    ctx.today ? `\n[memory/today]\n${ctx.today}` : '',
+    includeMemoryContext && ctx.longTerm ? `\n[MEMORY.md]\n${ctx.longTerm}` : '',
+    includeMemoryContext && ctx.yesterday ? `\n[memory/yesterday]\n${ctx.yesterday}` : '',
+    includeMemoryContext && ctx.today ? `\n[memory/today]\n${ctx.today}` : '',
     '---',
   ]
     .filter(Boolean)
@@ -129,6 +145,10 @@ async function makePrimeAgent(context: PrimeContext) {
 
   const tools = buildPrimeTools(context);
   const toolInstructions = buildToolInstructions(tools.map((tool) => tool.name));
+  const modelSettings =
+    context.contextMode === 'light'
+      ? { maxTokens: 220 }
+      : undefined;
 
   return new Agent({
     name: 'Prime',
@@ -139,10 +159,13 @@ async function makePrimeAgent(context: PrimeContext) {
       contextBlock,
     }),
     tools,
+    ...(modelSettings ? { modelSettings } : {}),
   });
 }
 
-export async function runPrime(input: string, opts: PrimeRunOptions = {}) {
+export type PrimeInput = string | AgentInputItem[];
+
+export async function runPrime(input: PrimeInput, opts: PrimeRunOptions = {}) {
   const scopeId = opts.scopeId ?? `default:${opts.channel ?? 'unknown'}:${opts.userId ?? 'unknown'}`;
   const rootDir = opts.rootDir ?? process.cwd();
   const role =
@@ -157,16 +180,19 @@ export async function runPrime(input: string, opts: PrimeRunOptions = {}) {
     role,
     ageGroup: opts.ageGroup,
     scopeType,
+    contextMode: opts.contextMode,
     fileSearchEnabled: opts.fileSearchEnabled,
     fileSearchVectorStoreId: opts.fileSearchVectorStoreId,
     fileSearchIncludeResults: opts.fileSearchIncludeResults,
     fileSearchMaxNumResults: opts.fileSearchMaxNumResults,
+    disabledToolNames: opts.disabledToolNames,
+    toolsConfig: opts.toolsConfig,
   };
 
   const agent = await makePrimeAgent(context);
 
   const store = opts.sessionStore ?? defaultSessionStore;
-  const session = store.getOrCreate(scopeId);
+  const session = opts.disableSession ? undefined : store.getOrCreate(scopeId);
 
   const result = await run(agent, input, {
     session,

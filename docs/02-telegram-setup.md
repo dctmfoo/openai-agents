@@ -73,6 +73,8 @@ pnpm start:gateway
 - Semantic memory background sync is built-in for active scopes when `semanticMemory.enabled=true`; cadence is `semanticMemory.syncIntervalMinutes`.
 - Telegram `message:document` uploads are enabled only when `fileMemory.enabled=true` and `fileMemory.uploadEnabled=true`.
 - During upload flow, users receive stage updates (download started, indexing started, final success/failure).
+- Telegram compressed photo uploads (`message:photo`) are not indexed yet; users are prompted to resend as **Attach → File**.
+- Upload telemetry is written as structured `events.jsonl` records with `type: "file.upload"`, stage tags in `data.stage` (for example: `received`, `download_started`, `downloaded`, `index_started`, `index_failed`, `completed`), and a per-upload correlation key in `data.uploadId`.
 - Optional retention cleanup can be enabled via `fileMemory.retention.enabled=true` in `HALO_HOME/config.json` (with optional `policyPreset`, `allowScopeIds`, and `denyScopeIds` controls; role-based presets use `family.json` member roles).
 
 Gateway admin exposes:
