@@ -22,9 +22,19 @@
 - Group chats are ignored unless the group ID matches `parentsGroup.telegramChatId`.
 - Family config is loaded at startup. Restart after changing `family.json`.
 
+## Shell tool errors
+
+- `Tool 'shell' is not supported with gpt-4.1`: this model does not support the hosted shell tool.
+  - Prime auto-selects `gpt-5.1` when shell is enabled.
+  - Optional overrides:
+    - `PRIME_MODEL` (global)
+    - `PRIME_SHELL_MODEL` (only when shell is present)
+
 ## Logs and diagnostics
 
-- Telegram and Gateway logs: `HALO_HOME/logs/events.jsonl`
+- Structured event logs: `HALO_HOME/logs/events.jsonl`
+- Runtime operational logs: `HALO_HOME/logs/runtime.jsonl`
+- Local tail helper: `make logs`
 
 Admin tail endpoints (loopback-only):
 

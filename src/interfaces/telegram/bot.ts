@@ -9,6 +9,7 @@ import { loadFamilyConfig, type FamilyConfig } from '../../runtime/familyConfig.
 import type { FileMemoryConfig, ToolsConfig } from '../../runtime/haloConfig.js';
 import { getHaloHome } from '../../runtime/haloHome.js';
 import { appendJsonl, type EventLogRecord } from '../../utils/logging.js';
+import { createRuntimeLogger, serializeError } from '../../utils/runtimeLogger.js';
 import { resolveTelegramPolicy, type TelegramPolicyDecision } from './policy.js';
 import { getScopeVectorStoreId } from '../../files/scopeFileRegistry.js';
 import { hashSessionId } from '../../sessions/sessionHash.js';
@@ -181,18 +182,6 @@ function buildUploadIndexFailureMessage(message: string): string {
 
   const clipped = normalized.length > 280 ? `${normalized.slice(0, 277)}...` : normalized;
   return `Could not finish indexing this file: ${clipped}`;
-}
-
-function serializeError(err: unknown): { name: string; message: string; stack?: string } | string {
-  if (err instanceof Error) {
-    return {
-      name: err.name,
-      message: err.message,
-      stack: err.stack,
-    };
-  }
-
-  return String(err);
 }
 
 function buildUploadId(ctx: TelegramContext, document: TelegramDocument): string {
@@ -435,7 +424,19 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
   };
 
   const logPath = `${logDir}/events.jsonl`;
+  const runtimeLogger = createRuntimeLogger({
+    logDir,
+    component: 'telegram.bot',
+  });
   const bot = providedBot ?? (new Bot(token) as unknown as TelegramBotLike);
+
+  runtimeLogger.info('adapter initialized', {
+    rootDir,
+    haloHome,
+    fileMemoryEnabled: fileMemory.enabled,
+    fileUploadEnabled: fileMemory.uploadEnabled,
+    shellToolEnabled: toolsConfig?.shell?.enabled ?? false,
+  });
 
   let familyConfigPromise: Promise<FamilyConfig> | null = null;
   const getFamilyConfig = async () => {
@@ -447,6 +448,32 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
 
   const writeLog = async (record: EventLogRecord) => {
     await appendJsonlImpl(logPath, record);
+
+    if (record.type === 'prime.run.error') {
+      runtimeLogger.error('prime.run.error', record.data);
+      return;
+    }
+
+    if (record.type === 'prime.run.success') {
+      runtimeLogger.info('prime.run.success', {
+        channel: record.data.channel,
+        scopeId: record.data.scopeId,
+        action: record.data.action ?? 'chat',
+      });
+      return;
+    }
+
+    if (record.type === 'file.upload') {
+      const stage = String(record.data.stage ?? 'unknown');
+      if (
+        stage === 'policy_denied' ||
+        stage === 'validation_failed' ||
+        stage === 'download_failed' ||
+        stage === 'index_failed'
+      ) {
+        runtimeLogger.warn(`file.upload.${stage}`, record.data);
+      }
+    }
   };
 
   const resolvePolicy = async (ctx: TelegramContext, userId: string): Promise<TelegramPolicyDecision | null> => {
