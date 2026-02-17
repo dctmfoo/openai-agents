@@ -5,6 +5,7 @@ export type EventLogRecord = {
   ts: string;
   type:
     | 'telegram.update'
+    | 'telegram.restart'
     | 'prime.run.start'
     | 'prime.run.success'
     | 'prime.run.error'

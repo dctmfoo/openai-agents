@@ -477,6 +477,16 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
       return;
     }
 
+    if (record.type === 'telegram.restart') {
+      runtimeLogger.info('telegram.restart', {
+        channel: record.data.channel ?? 'telegram',
+        scopeId: record.data.scopeId,
+        userId: record.data.userId,
+        command: record.data.command,
+      });
+      return;
+    }
+
     if (record.type === 'prime.run.success') {
       runtimeLogger.info('prime.run.success', {
         channel: record.data.channel,
@@ -868,7 +878,7 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
 
       await writeLog({
         ts: now().toISOString(),
-        type: 'prime.run.success',
+        type: 'telegram.restart',
         data: {
           channel: 'telegram',
           action: 'restart_requested',

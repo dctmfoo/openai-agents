@@ -684,6 +684,10 @@ describe('telegram adapter', () => {
     expect(exitSpy).toHaveBeenCalledWith(43);
     expect(timeoutSpy).toHaveBeenCalled();
 
+    const eventTypes = appendJsonl.mock.calls.map(([, record]) => record.type);
+    expect(eventTypes).toContain('telegram.restart');
+    expect(eventTypes).not.toContain('prime.run.success');
+
     exitSpy.mockRestore();
     timeoutSpy.mockRestore();
   });
