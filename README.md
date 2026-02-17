@@ -73,6 +73,12 @@ TELEGRAM_BOT_TOKEN=... pnpm start:gateway
 
 Gateway defaults to: `http://127.0.0.1:8787`
 
+For local supervised dev (supports Telegram `/restart` to trigger build+restart):
+
+```bash
+TELEGRAM_BOT_TOKEN=... pnpm dev:gateway:supervised
+```
+
 Run the Admin Console (Tauri v2):
 
 ```bash

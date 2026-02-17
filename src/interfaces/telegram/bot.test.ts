@@ -642,6 +642,90 @@ describe('telegram adapter', () => {
     expect(appendDailyNote).not.toHaveBeenCalled();
   });
 
+  it('handles /restart for parent dm by exiting with restart code', async () => {
+    const bot = makeFakeBot();
+    const appendJsonl = vi.fn().mockResolvedValue(undefined);
+    const appendDailyNote = vi.fn().mockResolvedValue('memory/2026-02-02.md');
+    const runPrime = vi.fn().mockResolvedValue({ finalOutput: 'ignored' });
+    const loadFamilyConfig = vi.fn().mockResolvedValue(familyConfig);
+
+    const exitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation((() => undefined as never) as (code?: string | number | null | undefined) => never);
+    const timeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((handler: unknown) => {
+      if (typeof handler === 'function') {
+        handler();
+      }
+      return 0 as unknown as NodeJS.Timeout;
+    }) as unknown as typeof setTimeout);
+
+    createTelegramAdapter({
+      token: 'token',
+      bot,
+      deps: { appendJsonl, appendScopedDailyNote: appendDailyNote, runPrime, loadFamilyConfig },
+    });
+
+    const reply = vi.fn().mockResolvedValue(undefined);
+    const ctx: TelegramContext = {
+      chat: { id: 1, type: 'private' },
+      message: { text: '/restart', message_id: 1 },
+      from: { id: 456 },
+      reply,
+    };
+
+    const handler = bot.handlers.messageText;
+    if (!handler) throw new Error('message handler not registered');
+
+    await handler(ctx);
+
+    expect(reply).toHaveBeenCalledWith('🔨 Building and restarting halo...');
+    expect(runPrime).not.toHaveBeenCalled();
+    expect(appendDailyNote).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(43);
+    expect(timeoutSpy).toHaveBeenCalled();
+
+    exitSpy.mockRestore();
+    timeoutSpy.mockRestore();
+  });
+
+  it('denies /restart for child dm', async () => {
+    const bot = makeFakeBot();
+    const appendJsonl = vi.fn().mockResolvedValue(undefined);
+    const appendDailyNote = vi.fn().mockResolvedValue('memory/2026-02-02.md');
+    const runPrime = vi.fn().mockResolvedValue({ finalOutput: 'ignored' });
+    const loadFamilyConfig = vi.fn().mockResolvedValue(familyConfig);
+
+    const exitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation((() => undefined as never) as (code?: string | number | null | undefined) => never);
+
+    createTelegramAdapter({
+      token: 'token',
+      bot,
+      deps: { appendJsonl, appendScopedDailyNote: appendDailyNote, runPrime, loadFamilyConfig },
+    });
+
+    const reply = vi.fn().mockResolvedValue(undefined);
+    const ctx: TelegramContext = {
+      chat: { id: 1, type: 'private' },
+      message: { text: '/restart', message_id: 1 },
+      from: { id: 999 },
+      reply,
+    };
+
+    const handler = bot.handlers.messageText;
+    if (!handler) throw new Error('message handler not registered');
+
+    await handler(ctx);
+
+    expect(reply).toHaveBeenCalledWith('Restart is only available in parent DMs.');
+    expect(runPrime).not.toHaveBeenCalled();
+    expect(appendDailyNote).not.toHaveBeenCalled();
+    expect(exitSpy).not.toHaveBeenCalled();
+
+    exitSpy.mockRestore();
+  });
+
   it('refuses unknown private messages without running Prime', async () => {
     const bot = makeFakeBot();
     const appendJsonl = vi.fn().mockResolvedValue(undefined);

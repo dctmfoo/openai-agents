@@ -69,6 +69,7 @@ pnpm start:gateway
 - Unknown DMs are refused (and do not create a session).
 - Group chats are ignored unless the group matches `parentsGroup.telegramChatId` and the sender is in the family list.
 - Family config is loaded once at startup; restart to pick up changes.
+- Parent DMs support `/restart` (and `/br`) to request build+restart. This works when running with the supervisor (`pnpm dev:gateway:supervised` or `make gateway-supervised`).
 - `OPENAI_API_KEY` is required for real model calls (smoke tests stub the model).
 - Semantic memory background sync is built-in for active scopes when `semanticMemory.enabled=true`; cadence is `semanticMemory.syncIntervalMinutes`.
 - Telegram image messages are routed to direct vision analysis (`message:photo` and image `message:document` with `mime_type=image/*`).

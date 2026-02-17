@@ -1,4 +1,4 @@
-.PHONY: help install install-admin install-all gateway gateway-prod admin logs chat-dashboard
+.PHONY: help install install-admin install-all gateway gateway-supervised gateway-prod admin logs chat-dashboard
 
 help:
 	@echo "Available targets:"
@@ -6,6 +6,7 @@ help:
 	@echo "  make install-admin    # Install apps/admin dependencies"
 	@echo "  make install-all      # Install both root + admin deps"
 	@echo "  make gateway          # Run gateway (Telegram bot + admin API) in dev mode"
+	@echo "  make gateway-supervised # Run gateway with restart supervisor (/restart support)"
 	@echo "  make gateway-prod     # Build and run gateway from dist"
 	@echo "  make admin            # Run the Tauri admin app"
 	@echo "  make logs             # Tail runtime + event logs from HALO_HOME"
@@ -20,7 +21,10 @@ install-admin:
 install-all: install install-admin
 
 gateway:
-	pnpm exec tsx src/gateway/start.ts
+	pnpm run dev:gateway
+
+gateway-supervised:
+	pnpm run dev:gateway:supervised
 
 gateway-prod:
 	pnpm build
@@ -53,7 +57,7 @@ chat-dashboard:
 		echo "Starting gateway on $$HOST:$$PORT..."; \
 		echo "HALO_HOME=$$HALO_HOME_DIR"; \
 		echo "LOG_DIR=$$LOG_DIR_PATH"; \
-		pnpm exec tsx src/gateway/start.ts & \
+		pnpm run dev:gateway:supervised & \
 		GATEWAY_PID=$$!; \
 		tail -n 0 -F "$$LOG_DIR_PATH/events.jsonl" & \
 		TAIL_PID=$$!; \

@@ -30,6 +30,14 @@
     - `PRIME_MODEL` (global)
     - `PRIME_SHELL_MODEL` (only when shell is present)
 
+## Restart command behavior
+
+- `/restart` or `/br` exits the runtime with code `43` (parent DM only).
+- To auto-build and come back up, run gateway under supervisor:
+  - `pnpm dev:gateway:supervised`
+  - or `make gateway-supervised`
+- If you run plain `pnpm dev:gateway`, `/restart` will stop the process but will not auto-restart.
+
 ## Logs and diagnostics
 
 - Structured event logs: `HALO_HOME/logs/events.jsonl`

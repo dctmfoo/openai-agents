@@ -147,6 +147,29 @@ const TELEGRAM_VISION_DISABLED_TOOLS = [
   TOOL_NAMES.shell,
 ] as const;
 
+const TELEGRAM_RESTART_EXIT_CODE = 43;
+const TELEGRAM_RESTART_DELAY_MS = 1000;
+const TELEGRAM_RESTART_REPLY = '🔨 Building and restarting halo...';
+const TELEGRAM_RESTART_DENIED_REPLY = 'Restart is only available in parent DMs.';
+const TELEGRAM_RESTART_COMMANDS = new Set(['restart', 'br']);
+
+type TelegramSlashCommand = {
+  commandName: string;
+  addressedBotUsername?: string;
+  args: string;
+};
+
+function parseTelegramSlashCommand(text: string): TelegramSlashCommand | null {
+  const match = text.match(/^\/([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9_]+))?(?:\s+([\s\S]+))?$/i);
+  if (!match) return null;
+
+  return {
+    commandName: match[1].toLowerCase(),
+    addressedBotUsername: match[2],
+    args: match[3]?.trim() ?? '',
+  };
+}
+
 function getFileExtension(filename: string): string | null {
   const normalized = filename.trim();
   const dotIndex = normalized.lastIndexOf('.');
@@ -835,6 +858,32 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
 
     const scopeId = await resolveScopeId(ctx, userId, policy);
     if (!scopeId) return;
+
+    const slashCommand = parseTelegramSlashCommand(text);
+    if (slashCommand && TELEGRAM_RESTART_COMMANDS.has(slashCommand.commandName)) {
+      if (policy.role !== 'parent' || policy.scopeType !== 'dm') {
+        await ctx.reply(TELEGRAM_RESTART_DENIED_REPLY);
+        return;
+      }
+
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'prime.run.success',
+        data: {
+          channel: 'telegram',
+          action: 'restart_requested',
+          userId,
+          scopeId,
+          command: slashCommand.commandName,
+        },
+      });
+
+      await ctx.reply(TELEGRAM_RESTART_REPLY);
+      setTimeout(() => {
+        process.exit(TELEGRAM_RESTART_EXIT_CODE);
+      }, TELEGRAM_RESTART_DELAY_MS);
+      return;
+    }
 
     let fileSearchVectorStoreId: string | null = null;
     if (fileMemory.enabled) {
