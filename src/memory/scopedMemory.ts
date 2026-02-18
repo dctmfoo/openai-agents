@@ -19,6 +19,10 @@ function sanitize(text: string): string {
     .replace(/\b\d{9,}:[A-Za-z0-9_-]{10,}\b/g, '[REDACTED_TELEGRAM_TOKEN]');
 }
 
+function normalizeBullet(line: string): string {
+  return line.trim().replace(/^[-*]\s+/, '').trim().toLowerCase();
+}
+
 function scopeDir(paths: ScopedMemoryPaths): string {
   const hashed = hashSessionId(paths.scopeId);
   return join(paths.rootDir, 'memory', 'scopes', hashed);
@@ -81,4 +85,52 @@ export async function appendScopedDailyNote(
   await appendFile(path, line + '\n', 'utf8');
 
   return path;
+}
+
+export async function appendScopedDailyNotesUnique(
+  paths: ScopedMemoryPaths,
+  notes: string[],
+  date = new Date(),
+): Promise<{ path: string; appendedCount: number }> {
+  const path = getScopedDailyPath(paths, date);
+  await mkdir(scopeDir(paths), { recursive: true });
+
+  const header = `# ${isoDate(date)}\n\n`;
+  if (!existsSync(path)) {
+    await appendFile(path, header, 'utf8');
+  }
+
+  const existing = await safeRead(path);
+  const seen = new Set(
+    existing
+      .split(/\r?\n/)
+      .map((line) => normalizeBullet(line))
+      .filter(Boolean),
+  );
+
+  const toAppend: string[] = [];
+  for (const note of notes) {
+    const clean = sanitize(note.trim());
+    if (!clean) {
+      continue;
+    }
+
+    const normalized = normalizeBullet(clean);
+    if (seen.has(normalized)) {
+      continue;
+    }
+
+    seen.add(normalized);
+    const line = clean.startsWith('-') ? clean : `- ${clean}`;
+    toAppend.push(line);
+  }
+
+  if (toAppend.length > 0) {
+    await appendFile(path, `${toAppend.join('\n')}\n`, 'utf8');
+  }
+
+  return {
+    path,
+    appendedCount: toAppend.length,
+  };
 }

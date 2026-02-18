@@ -15,6 +15,9 @@ type TranscriptSyncManagerOptions = {
   vectorStore: SyncVectorStore & TranscriptIndexState;
   embedder: (texts: string[]) => Promise<number[][]>;
   maxNewLinesPerSync?: number;
+  laneId?: string;
+  ownerMemberId?: string | null;
+  policyVersion?: string;
 };
 
 const DEFAULT_MAX_NEW_LINES = 200;
@@ -65,6 +68,9 @@ class TranscriptSyncManager {
       scopeId,
       path: transcriptPath,
       lines,
+      laneId: this.options.laneId,
+      ownerMemberId: this.options.ownerMemberId,
+      policyVersion: this.options.policyVersion,
     });
 
     if (chunks.length === 0) {

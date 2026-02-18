@@ -55,6 +55,7 @@ export class SemanticMemory {
     vectorStoreFactory?: VectorStoreFactory;
     searchEngineFactory?: SearchEngineFactory;
     syncManagerFactory?: SyncManagerFactory;
+    searchEngineOptions?: Partial<SearchEngineOptions>;
   }) {
     this.rootDir = options.rootDir;
     this.scopeId = options.scopeId;
@@ -108,13 +109,18 @@ export class SemanticMemory {
       options.syncManagerFactory ??
       ((syncOptions) => new SyncManager(syncOptions));
 
-    this.searchOptions = {
+    const defaultSearchOptions: Partial<SearchEngineOptions> = {
       vectorWeight: semantic?.search.vectorWeight ?? 0.7,
       textWeight: semantic?.search.textWeight ?? 0.3,
       minScore: semantic?.search.minScore ?? 0.005,
       rrfK: 60,
       recencyHalfLifeDays: semantic?.recencyHalfLifeDays ?? 30,
       accessWeight: semantic?.accessWeight ?? 0.1,
+    };
+
+    this.searchOptions = {
+      ...defaultSearchOptions,
+      ...options.searchEngineOptions,
     };
   }
 

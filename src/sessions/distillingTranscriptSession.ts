@@ -24,6 +24,14 @@ export type DistillationConfig = {
   mode: 'deterministic' | 'llm';
 };
 
+function isPromiseLike<T>(value: Promise<T> | T): value is Promise<T> {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  return typeof (value as { then?: unknown }).then === 'function';
+}
+
 class DistillingTranscriptSession implements Session {
   protected readonly session: Session;
   protected readonly transcript: TranscriptStore;
@@ -63,12 +71,27 @@ class DistillingTranscriptSession implements Session {
     await this.transcript.appendItems(items);
     await this.session.addItems(items);
 
-    if (!this.distill.enabled) return;
+    if (!this.distill.enabled) {
+      return;
+    }
 
     this.pending += items.length;
-    if (this.pending < this.distill.everyNItems) return;
+    this.queueDistillationIfReady(false);
+  }
 
-    // Reset pending first to avoid repeated triggers if we crash.
+  protected triggerDistillationAfterCompaction(): void {
+    if (!this.distill.enabled) {
+      return;
+    }
+
+    this.queueDistillationIfReady(true);
+  }
+
+  private queueDistillationIfReady(force: boolean): void {
+    if (!force && this.pending < this.distill.everyNItems) {
+      return;
+    }
+
     this.pending = 0;
 
     const now = Date.now();
@@ -76,8 +99,6 @@ class DistillingTranscriptSession implements Session {
       return;
     }
 
-    // Fire-and-forget (but serialized) distillation.
-    // We don't want to block the user reply on distillation.
     this.running = (this.running ?? Promise.resolve())
       .then(async () => {
         const gateNow = Date.now();
@@ -94,12 +115,10 @@ class DistillingTranscriptSession implements Session {
           mode: this.distill.mode,
         });
 
-        // Success clears backoff.
         this.distillFailureCount = 0;
         this.distillBackoffUntilMs = 0;
       })
       .catch((err) => {
-        // Exponential backoff (per scope) so a failing distillation doesn't retry every message.
         this.distillFailureCount += 1;
         const backoffMs = Math.min(
           10 * 60 * 1000,
@@ -107,18 +126,20 @@ class DistillingTranscriptSession implements Session {
         );
         this.distillBackoffUntilMs = Date.now() + backoffMs;
 
-        // Fail-safe: never break the chat loop because distillation failed.
-        // We don't have a structured logger at this layer; callers can monitor gateway event logs.
         console.error('halo: distillation failed', {
           scopeId: this.scopeId,
           backoffMs,
           backoffUntilMs: this.distillBackoffUntilMs,
-          error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : String(err),
+          error:
+            err instanceof Error
+              ? { name: err.name, message: err.message, stack: err.stack }
+              : String(err),
         });
       })
       .finally(() => {
-        // Keep chain alive.
-        if (this.running) this.running = null;
+        if (this.running) {
+          this.running = null;
+        }
       });
   }
 
@@ -150,7 +171,17 @@ class DistillingTranscriptCompactionSession
   runCompaction(
     args?: OpenAIResponsesCompactionArgs,
   ): Promise<OpenAIResponsesCompactionResult | null> | OpenAIResponsesCompactionResult | null {
-    return this.compactionSession.runCompaction(args);
+    const result = this.compactionSession.runCompaction(args);
+
+    if (isPromiseLike(result)) {
+      return result.then((value) => {
+        this.triggerDistillationAfterCompaction();
+        return value;
+      });
+    }
+
+    this.triggerDistillationAfterCompaction();
+    return result;
   }
 }
 

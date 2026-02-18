@@ -14,4 +14,6 @@ export type PrimeContext = ToolPolicyContext & {
   fileSearchMaxNumResults?: number;
   disabledToolNames?: ToolName[];
   toolsConfig?: ToolsConfig;
+  allowedMemoryReadLanes?: string[];
+  allowedMemoryReadScopes?: string[];
 };

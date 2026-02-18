@@ -1,5 +1,8 @@
 import { Agent, run, type AgentInputItem } from '@openai/agents';
 import process from 'node:process';
+import { buildScopeCitationPolicy, applyScopeCitationPolicy } from '../files/citationPolicy.js';
+import { readScopeFileRegistry } from '../files/scopeFileRegistry.js';
+import { loadLaneContextFiles } from '../memory/laneMemory.js';
 import { loadScopedContextFiles } from '../memory/scopedMemory.js';
 import type { ToolsConfig } from '../runtime/haloConfig.js';
 import { defaultSessionStore, type SessionStore } from '../sessions/sessionStore.js';
@@ -28,6 +31,8 @@ export type PrimeRunOptions = {
   contextMode?: 'full' | 'light';
   disabledToolNames?: ToolName[];
   toolsConfig?: ToolsConfig;
+  allowedMemoryReadLanes?: string[];
+  allowedMemoryReadScopes?: string[];
   /**
    * Skip session-backed history for this run.
    * Useful for large multimodal payloads that should not bloat long-lived sessions.
@@ -77,6 +82,20 @@ const buildToolInstructions = (toolNames: string[]) => {
   return instructions;
 };
 
+const resolvePrimeModel = (toolNames: string[]): string | undefined => {
+  const explicitModel = process.env.PRIME_MODEL?.trim();
+  if (explicitModel) {
+    return explicitModel;
+  }
+
+  if (toolNames.includes(TOOL_NAMES.shell)) {
+    const shellModel = process.env.PRIME_SHELL_MODEL?.trim();
+    return shellModel || 'gpt-5.1';
+  }
+
+  return undefined;
+};
+
 type PrimeInstructionOptions = {
   role?: 'parent' | 'child';
   ageGroup?: 'child' | 'teen' | 'young_adult';
@@ -124,18 +143,31 @@ export function buildPrimeInstructions(options: PrimeInstructionOptions): string
 }
 
 async function makePrimeAgent(context: PrimeContext) {
-  const ctx = await loadScopedContextFiles({
-    rootDir: context.rootDir,
-    scopeId: context.scopeId,
-  });
+  const laneFilter = context.allowedMemoryReadLanes ?? [];
+  const hasLaneFilter = laneFilter.length > 0;
+
+  const ctx = hasLaneFilter
+    ? await loadLaneContextFiles({
+        rootDir: context.rootDir,
+        laneIds: laneFilter,
+      })
+    : await loadScopedContextFiles({
+        rootDir: context.rootDir,
+        scopeId: context.scopeId,
+      });
+
   const includeMemoryContext = context.contextMode !== 'light';
+
+  const memoryHeader = hasLaneFilter
+    ? '[MEMORY.md — allowed lanes only]'
+    : '[MEMORY.md]';
 
   const contextBlock = [
     '---',
     'Context files (read-only excerpts):',
     ctx.soul ? `\n[SOUL.md]\n${ctx.soul}` : '',
     ctx.user ? `\n[USER.md]\n${ctx.user}` : '',
-    includeMemoryContext && ctx.longTerm ? `\n[MEMORY.md]\n${ctx.longTerm}` : '',
+    includeMemoryContext && ctx.longTerm ? `\n${memoryHeader}\n${ctx.longTerm}` : '',
     includeMemoryContext && ctx.yesterday ? `\n[memory/yesterday]\n${ctx.yesterday}` : '',
     includeMemoryContext && ctx.today ? `\n[memory/today]\n${ctx.today}` : '',
     '---',
@@ -144,7 +176,9 @@ async function makePrimeAgent(context: PrimeContext) {
     .join('\n');
 
   const tools = buildPrimeTools(context);
-  const toolInstructions = buildToolInstructions(tools.map((tool) => tool.name));
+  const toolNames = tools.map((tool) => tool.name);
+  const toolInstructions = buildToolInstructions(toolNames);
+  const model = resolvePrimeModel(toolNames);
   const modelSettings =
     context.contextMode === 'light'
       ? { maxTokens: 220 }
@@ -158,9 +192,47 @@ async function makePrimeAgent(context: PrimeContext) {
       toolInstructions,
       contextBlock,
     }),
+    ...(model ? { model } : {}),
     tools,
     ...(modelSettings ? { modelSettings } : {}),
   });
+}
+
+async function applyFileCitationPolicy(
+  output: string,
+  context: PrimeContext,
+): Promise<string> {
+  if (!context.fileSearchEnabled) {
+    return output;
+  }
+
+  const registry = await readScopeFileRegistry({
+    rootDir: context.rootDir,
+    scopeId: context.scopeId,
+  });
+
+  if (!registry || registry.files.length === 0) {
+    return output;
+  }
+
+  const allowedScopeIds =
+    context.allowedMemoryReadScopes && context.allowedMemoryReadScopes.length > 0
+      ? context.allowedMemoryReadScopes
+      : [context.scopeId];
+
+  const policy = buildScopeCitationPolicy({
+    files: registry.files.map((file) => {
+      return {
+        filename: file.filename,
+        storageMetadata: file.storageMetadata,
+      };
+    }),
+    allowedLaneIds: context.allowedMemoryReadLanes ?? [],
+    allowedScopeIds,
+  });
+
+  const applied = applyScopeCitationPolicy(output, policy);
+  return applied.output;
 }
 
 export type PrimeInput = string | AgentInputItem[];
@@ -187,6 +259,8 @@ export async function runPrime(input: PrimeInput, opts: PrimeRunOptions = {}) {
     fileSearchMaxNumResults: opts.fileSearchMaxNumResults,
     disabledToolNames: opts.disabledToolNames,
     toolsConfig: opts.toolsConfig,
+    allowedMemoryReadLanes: opts.allowedMemoryReadLanes,
+    allowedMemoryReadScopes: opts.allowedMemoryReadScopes,
   };
 
   const agent = await makePrimeAgent(context);
@@ -206,8 +280,15 @@ export async function runPrime(input: PrimeInput, opts: PrimeRunOptions = {}) {
     context.ageGroup ?? 'child',
   );
 
+  let finalOutput = filtered.filtered;
+  try {
+    finalOutput = await applyFileCitationPolicy(filtered.filtered, context);
+  } catch {
+    finalOutput = filtered.filtered;
+  }
+
   return {
-    finalOutput: filtered.filtered,
+    finalOutput,
     raw: result,
   };
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { resolveDecisionEnvelope } from '../../policies/decisionEnvelope.js';
 import { resolveTelegramPolicy } from './policy.js';
 
 const baseFamily = {
@@ -47,6 +48,11 @@ describe('telegram policy', () => {
     expect(decision.allow).toBe(true);
     expect(decision.scopeType).toBe('dm');
     expect(decision.scopeId).toBe('telegram:dm:wags');
+    expect(decision.allowedMemoryReadLanes).toEqual([
+      'family_shared',
+      'parent_private:wags',
+      'parents_shared',
+    ]);
   });
 
   it('includes age group for child dms', () => {
@@ -94,5 +100,96 @@ describe('telegram policy', () => {
 
     expect(decision.allow).toBe(false);
     expect(decision.reason).toBe('child_in_parents_group');
+  });
+
+  it('allows family-group messages when halo is mentioned', () => {
+    const decision = resolveTelegramPolicy({
+      chat: { id: 888, type: 'group' },
+      fromId: 456,
+      family: baseFamily,
+      familyGroupChatId: 888,
+      intent: { isMentioned: true },
+    });
+
+    expect(decision.allow).toBe(true);
+    expect(decision.scopeType).toBe('family_group');
+    expect(decision.scopeId).toBe('telegram:family_group:888');
+    expect(decision.allowedCapabilities).toContain('chat.respond.group_safe');
+  });
+
+  it('denies family-group messages without mention', () => {
+    const decision = resolveTelegramPolicy({
+      chat: { id: 888, type: 'group' },
+      fromId: 456,
+      family: baseFamily,
+      familyGroupChatId: 888,
+      intent: { isMentioned: false },
+    });
+
+    expect(decision.allow).toBe(false);
+    expect(decision.reason).toBe('mention_required');
+    expect(decision.rationale).toContain('mention_required_in_family_group');
+  });
+});
+
+describe('decision envelope baseline scenarios', () => {
+  it('allows parent dms', () => {
+    const envelope = resolveDecisionEnvelope({
+      policyVersion: 'v1',
+      chat: { id: 456, type: 'private' },
+      fromId: 456,
+      family: baseFamily,
+      intent: { isMentioned: false },
+      familyGroupChatId: 888,
+    });
+
+    expect(envelope.action).toBe('allow');
+    expect(envelope.scope.scopeType).toBe('dm');
+    expect(envelope.speaker.memberId).toBe('wags');
+  });
+
+  it('allows child dms', () => {
+    const envelope = resolveDecisionEnvelope({
+      policyVersion: 'v1',
+      chat: { id: 999, type: 'private' },
+      fromId: 999,
+      family: baseFamily,
+      intent: { isMentioned: false },
+      familyGroupChatId: 888,
+    });
+
+    expect(envelope.action).toBe('allow');
+    expect(envelope.scope.scopeType).toBe('dm');
+    expect(envelope.speaker.memberId).toBe('kid');
+    expect(envelope.speaker.role).toBe('child');
+  });
+
+  it('denies family-group messages when halo is not mentioned', () => {
+    const envelope = resolveDecisionEnvelope({
+      policyVersion: 'v1',
+      chat: { id: 888, type: 'group' },
+      fromId: 456,
+      family: baseFamily,
+      intent: { isMentioned: false },
+      familyGroupChatId: 888,
+    });
+
+    expect(envelope.action).toBe('deny');
+    expect(envelope.scope.scopeType).toBe('family_group');
+    expect(envelope.rationale).toContain('mention_required_in_family_group');
+  });
+
+  it('denies unknown users', () => {
+    const envelope = resolveDecisionEnvelope({
+      policyVersion: 'v1',
+      chat: { id: 111, type: 'private' },
+      fromId: 111,
+      family: baseFamily,
+      intent: { isMentioned: false },
+      familyGroupChatId: 888,
+    });
+
+    expect(envelope.action).toBe('deny');
+    expect(envelope.rationale).toContain('unknown_user');
   });
 });

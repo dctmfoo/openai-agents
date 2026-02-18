@@ -2,6 +2,10 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
+import {
+  buildLaneStorageMetadata,
+  type LaneStorageMetadata,
+} from '../memory/laneTopology.js';
 import { hashSessionId } from '../sessions/sessionHash.js';
 
 export type ScopeFileRegistryPaths = {
@@ -21,6 +25,7 @@ export type ScopeFileRecord = {
   lastError: string | null;
   uploadedBy: string;
   uploadedAtMs: number;
+  storageMetadata?: LaneStorageMetadata;
 };
 
 export type ScopeFileRegistry = {
@@ -57,6 +62,42 @@ function createEmptyRegistry(paths: ScopeFileRegistryPaths, nowMs: number): Scop
   };
 }
 
+function buildDefaultStorageMetadata(
+  scopeId: string,
+  uploadedBy: string,
+): LaneStorageMetadata {
+  return buildLaneStorageMetadata({
+    laneId: 'system_audit',
+    ownerMemberId: uploadedBy.trim() ? uploadedBy : null,
+    scopeId,
+    policyVersion: 'legacy-v1',
+    artifactType: 'document',
+  });
+}
+
+function normalizeScopeFileRecord(
+  scopeId: string,
+  record: ScopeFileRecord,
+): ScopeFileRecord {
+  if (record.storageMetadata) {
+    return record;
+  }
+
+  return {
+    ...record,
+    storageMetadata: buildDefaultStorageMetadata(scopeId, record.uploadedBy),
+  };
+}
+
+function normalizeScopeFileRegistry(registry: ScopeFileRegistry): ScopeFileRegistry {
+  return {
+    ...registry,
+    files: registry.files.map((record) => {
+      return normalizeScopeFileRecord(registry.scopeId, record);
+    }),
+  };
+}
+
 export async function readScopeFileRegistry(
   paths: ScopeFileRegistryPaths,
 ): Promise<ScopeFileRegistry | null> {
@@ -68,7 +109,8 @@ export async function readScopeFileRegistry(
   if (parsed.scopeId !== paths.scopeId) {
     return null;
   }
-  return parsed;
+
+  return normalizeScopeFileRegistry(parsed);
 }
 
 async function getOrCreateScopeFileRegistry(
@@ -112,16 +154,17 @@ export async function upsertScopeFileRecord(
 ): Promise<ScopeFileRegistry> {
   const registry = await getOrCreateScopeFileRegistry(paths, nowMs);
   const files = [...registry.files];
+  const normalizedRecord = normalizeScopeFileRecord(paths.scopeId, record);
   const existingIdx = files.findIndex(
     (entry) =>
-      entry.telegramFileUniqueId === record.telegramFileUniqueId ||
-      entry.telegramFileId === record.telegramFileId,
+      entry.telegramFileUniqueId === normalizedRecord.telegramFileUniqueId ||
+      entry.telegramFileId === normalizedRecord.telegramFileId,
   );
 
   if (existingIdx >= 0) {
-    files[existingIdx] = record;
+    files[existingIdx] = normalizedRecord;
   } else {
-    files.push(record);
+    files.push(normalizedRecord);
   }
 
   return await replaceScopeFileRecords(paths, files, nowMs);
@@ -133,10 +176,14 @@ export async function replaceScopeFileRecords(
   nowMs = Date.now(),
 ): Promise<ScopeFileRegistry> {
   const registry = await getOrCreateScopeFileRegistry(paths, nowMs);
+  const normalizedFiles = files.map((record) => {
+    return normalizeScopeFileRecord(paths.scopeId, record);
+  });
+
   const updated: ScopeFileRegistry = {
     ...registry,
     updatedAtMs: nowMs,
-    files,
+    files: normalizedFiles,
   };
 
   await writeRegistry(paths, updated);

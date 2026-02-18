@@ -24,15 +24,6 @@ type SearchStore = {
   markAccess: (chunkIdxs: number[]) => void;
 };
 
-export type SearchEngineOptions = {
-  vectorWeight: number;
-  textWeight: number;
-  rrfK: number;
-  minScore: number;
-  recencyHalfLifeDays: number;
-  accessWeight: number;
-};
-
 export type SearchRequest = {
   query: string;
   embedding: number[];
@@ -48,6 +39,43 @@ export type SearchResult = {
   baseScore: number;
   recencyBoost: number;
   accessBoost: number;
+};
+
+type SearchCandidate = {
+  chunkIdx: number;
+  content: string;
+  path: string;
+  updatedAt: number;
+  accessCount: number;
+  vectorRank?: number;
+  textRank?: number;
+};
+
+type CandidatePrefilterHook = (input: {
+  request: SearchRequest;
+  candidate: SearchCandidate;
+}) => boolean;
+
+type NeighborExpansionHook = (input: {
+  request: SearchRequest;
+  results: SearchResult[];
+}) => SearchResult[];
+
+type RerankHook = (input: {
+  request: SearchRequest;
+  results: SearchResult[];
+}) => SearchResult[];
+
+export type SearchEngineOptions = {
+  vectorWeight: number;
+  textWeight: number;
+  rrfK: number;
+  minScore: number;
+  recencyHalfLifeDays: number;
+  accessWeight: number;
+  candidatePrefilter?: CandidatePrefilterHook;
+  neighborExpansionHook?: NeighborExpansionHook;
+  rerankHook?: RerankHook;
 };
 
 const DEFAULT_OPTIONS: SearchEngineOptions = {
@@ -77,6 +105,63 @@ const makeSnippet = (content: string, maxLength = 240) => {
   return `${content.slice(0, maxLength).trim()}…`;
 };
 
+function toCandidateFromResult(result: SearchResult): SearchCandidate {
+  return {
+    chunkIdx: result.chunkIdx,
+    content: result.content,
+    path: result.path,
+    updatedAt: Date.now(),
+    accessCount: 0,
+  };
+}
+
+function isCandidateAllowed(
+  request: SearchRequest,
+  candidate: SearchCandidate,
+  prefilter?: CandidatePrefilterHook,
+): boolean {
+  if (!prefilter) {
+    return true;
+  }
+
+  return prefilter({ request, candidate });
+}
+
+function applyResultPolicyGate(
+  request: SearchRequest,
+  results: SearchResult[],
+  options: SearchEngineOptions,
+): SearchResult[] {
+  const seen = new Set<number>();
+  const allowed: SearchResult[] = [];
+
+  for (const result of results) {
+    if (result.score < options.minScore) {
+      continue;
+    }
+
+    if (seen.has(result.chunkIdx)) {
+      continue;
+    }
+
+    const candidate = toCandidateFromResult(result);
+    const candidateAllowed = isCandidateAllowed(
+      request,
+      candidate,
+      options.candidatePrefilter,
+    );
+
+    if (!candidateAllowed) {
+      continue;
+    }
+
+    seen.add(result.chunkIdx);
+    allowed.push(result);
+  }
+
+  return allowed;
+}
+
 export class SearchEngine {
   private readonly store: SearchStore;
   private readonly options: SearchEngineOptions;
@@ -90,17 +175,11 @@ export class SearchEngine {
     const vectorResults = this.store.vectorSearch(request.embedding, request.topK);
     const textResults = this.store.textSearch(request.query, request.topK);
 
-    const combined = new Map<number, {
-      content: string;
-      path: string;
-      vectorRank?: number;
-      textRank?: number;
-      updatedAt: number;
-      accessCount: number;
-    }>();
+    const combined = new Map<number, SearchCandidate>();
 
     vectorResults.forEach((result, idx) => {
       combined.set(result.chunkIdx, {
+        chunkIdx: result.chunkIdx,
         content: result.content,
         path: result.path,
         vectorRank: idx + 1,
@@ -115,7 +194,9 @@ export class SearchEngine {
         existing.textRank = idx + 1;
         return;
       }
+
       combined.set(result.chunkIdx, {
+        chunkIdx: result.chunkIdx,
         content: result.content,
         path: result.path,
         textRank: idx + 1,
@@ -124,38 +205,76 @@ export class SearchEngine {
       });
     });
 
-    const results: SearchResult[] = [];
-    for (const [chunkIdx, data] of combined.entries()) {
+    const scored: SearchResult[] = [];
+
+    for (const candidate of combined.values()) {
+      const candidateAllowed = isCandidateAllowed(
+        request,
+        candidate,
+        this.options.candidatePrefilter,
+      );
+      if (!candidateAllowed) {
+        continue;
+      }
+
       const vectorScore =
-        data.vectorRank !== undefined
-          ? rrfScore(data.vectorRank, this.options.rrfK) * this.options.vectorWeight
+        candidate.vectorRank !== undefined
+          ? rrfScore(candidate.vectorRank, this.options.rrfK) * this.options.vectorWeight
           : 0;
       const textScore =
-        data.textRank !== undefined
-          ? rrfScore(data.textRank, this.options.rrfK) * this.options.textWeight
+        candidate.textRank !== undefined
+          ? rrfScore(candidate.textRank, this.options.rrfK) * this.options.textWeight
           : 0;
 
       const baseScore = vectorScore + textScore;
-      const recencyBoost = computeRecencyBoost(data.updatedAt, this.options.recencyHalfLifeDays);
-      const accessBoost = computeAccessBoost(data.accessCount, this.options.accessWeight);
+      const recencyBoost = computeRecencyBoost(
+        candidate.updatedAt,
+        this.options.recencyHalfLifeDays,
+      );
+      const accessBoost = computeAccessBoost(candidate.accessCount, this.options.accessWeight);
       const score = baseScore * recencyBoost * accessBoost;
 
-      if (score < this.options.minScore) continue;
+      if (score < this.options.minScore) {
+        continue;
+      }
 
-      results.push({
-        chunkIdx,
-        content: data.content,
-        path: data.path,
+      scored.push({
+        chunkIdx: candidate.chunkIdx,
+        content: candidate.content,
+        path: candidate.path,
         score,
         baseScore,
         recencyBoost,
         accessBoost,
-        snippet: makeSnippet(data.content),
+        snippet: makeSnippet(candidate.content),
       });
     }
 
-    results.sort((a, b) => b.score - a.score);
-    const trimmed = results.slice(0, request.topK);
+    scored.sort((a, b) => b.score - a.score);
+
+    const expanded = this.options.neighborExpansionHook
+      ? [
+          ...scored,
+          ...this.options.neighborExpansionHook({
+            request,
+            results: [...scored],
+          }),
+        ]
+      : scored;
+
+    const expandedSorted = [...expanded].sort((a, b) => b.score - a.score);
+    const gatedExpanded = applyResultPolicyGate(request, expandedSorted, this.options);
+
+    const reranked = this.options.rerankHook
+      ? this.options.rerankHook({
+          request,
+          results: [...gatedExpanded],
+        })
+      : gatedExpanded;
+
+    const gatedFinal = applyResultPolicyGate(request, reranked, this.options);
+    const trimmed = gatedFinal.slice(0, request.topK);
+
     this.store.markAccess(trimmed.map((item) => item.chunkIdx));
     return trimmed;
   }

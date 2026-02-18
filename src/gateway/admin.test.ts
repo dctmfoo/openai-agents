@@ -3,7 +3,7 @@ import type { AgentInputItem } from '@openai/agents';
 
 import { buildHaloHomePaths, createStatusHandler } from './admin.js';
 import { SessionStore } from '../sessions/sessionStore.js';
-import { mkdtemp, mkdir, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { hashSessionId } from '../sessions/sessionHash.js';
@@ -12,6 +12,11 @@ import {
   setScopeVectorStoreId,
   upsertScopeFileRecord,
 } from '../files/scopeFileRegistry.js';
+import {
+  appendLaneDailyNotesUnique,
+  appendLaneLongTermFacts,
+  getLaneLongTermPath,
+} from '../memory/laneMemory.js';
 
 type MockResponse = {
   statusCode: number;
@@ -89,6 +94,142 @@ const writeFamilyConfig = async (rootDir: string) => {
   };
   await writeFile(path.join(configDir, 'family.json'), JSON.stringify(payload), 'utf8');
   return payload;
+};
+
+const writeControlPlaneFamilyConfig = async (rootDir: string) => {
+  const configDir = path.join(rootDir, 'config');
+  await mkdir(configDir, { recursive: true });
+
+  await writeFile(
+    path.join(rootDir, 'config.json'),
+    JSON.stringify(
+      {
+        schemaVersion: 1,
+        controlPlane: {
+          activeProfile: 'v2',
+          profiles: {
+            v2: {
+              path: 'config/control-plane.json',
+            },
+          },
+        },
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  );
+
+  const controlPlane = {
+    schemaVersion: 2,
+    policyVersion: 'v2',
+    familyId: 'test-family',
+    activeProfileId: 'default_household',
+    profiles: [
+      {
+        profileId: 'parent_default',
+        role: 'parent',
+        capabilityTierId: 'cap_parent',
+        memoryLanePolicyId: 'lane_parent',
+        modelPolicyId: 'model_parent',
+        safetyPolicyId: 'safety_parent',
+      },
+      {
+        profileId: 'young_child',
+        role: 'child',
+        capabilityTierId: 'cap_child',
+        memoryLanePolicyId: 'lane_child',
+        modelPolicyId: 'model_child',
+        safetyPolicyId: 'safety_child',
+      },
+    ],
+    members: [
+      {
+        memberId: 'parent-1',
+        displayName: 'Pat',
+        role: 'parent',
+        profileId: 'parent_default',
+        telegramUserIds: [111],
+      },
+      {
+        memberId: 'parent-2',
+        displayName: 'Lee',
+        role: 'parent',
+        profileId: 'parent_default',
+        telegramUserIds: [112],
+      },
+      {
+        memberId: 'child-1',
+        displayName: 'Kid',
+        role: 'child',
+        profileId: 'young_child',
+        telegramUserIds: [222],
+      },
+    ],
+    scopes: [
+      {
+        scopeId: 'telegram:parents_group:999',
+        scopeType: 'parents_group',
+        telegramChatId: 999,
+      },
+      {
+        scopeId: 'telegram:family_group:888',
+        scopeType: 'family_group',
+        telegramChatId: 888,
+      },
+    ],
+    capabilityTiers: {
+      cap_parent: ['chat.respond'],
+      cap_child: ['chat.respond'],
+    },
+    memoryLanePolicies: {
+      lane_parent: {
+        readLanes: ['parent_private:{memberId}', 'parents_shared', 'family_shared'],
+        writeLanes: ['parent_private:{memberId}'],
+      },
+      lane_child: {
+        readLanes: ['child_private:{memberId}', 'family_shared'],
+        writeLanes: ['child_private:{memberId}'],
+      },
+    },
+    modelPolicies: {
+      model_parent: {
+        tier: 'parent_default',
+        model: 'gpt-5.1',
+        reason: 'parent_dm',
+      },
+      model_child: {
+        tier: 'child_default',
+        model: 'gpt-5.1-mini',
+        reason: 'child_dm',
+      },
+    },
+    safetyPolicies: {
+      safety_parent: {
+        riskLevel: 'low',
+        escalationPolicyId: 'none',
+      },
+      safety_child: {
+        riskLevel: 'medium',
+        escalationPolicyId: 'minor_default',
+      },
+    },
+    operations: {
+      managerMemberIds: ['parent-1'],
+      laneRetention: {
+        defaultDays: 30,
+        byLaneId: {
+          'child_private:child-1': 7,
+        },
+      },
+    },
+  };
+
+  await writeFile(
+    path.join(configDir, 'control-plane.json'),
+    JSON.stringify(controlPlane, null, 2),
+    'utf8',
+  );
 };
 
 const seedScopeFileRegistry = async (rootDir: string, scopeId: string) => {
@@ -1289,6 +1430,324 @@ describe('gateway status handler', () => {
 
     expect(res.statusCode).toBe(409);
     expect(JSON.parse(res.body)).toEqual({ error: 'file_memory_disabled' });
+  });
+
+  it('exports lane memory for configured parent managers', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    await writeControlPlaneFamilyConfig(haloHome);
+    const laneId = 'child_private:child-1';
+
+    await appendLaneLongTermFacts({ rootDir: haloHome, laneId }, ['Kid solved hard puzzles']);
+    await appendLaneDailyNotesUnique(
+      { rootDir: haloHome, laneId },
+      ['Math practice streak'],
+      new Date('2026-02-18T10:00:00.000Z'),
+    );
+
+    const store = await makeSessionStore(haloHome);
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'GET',
+        url: `/memory/lanes/${encodeURIComponent(laneId)}/export?memberId=parent-1`,
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(200);
+    const payload = JSON.parse(res.body) as {
+      laneId: string;
+      longTerm: string;
+      dailyFiles: Array<{ date: string }>;
+    };
+    expect(payload.laneId).toBe(laneId);
+    expect(payload.longTerm).toContain('Kid solved hard puzzles');
+    expect(payload.dailyFiles).toHaveLength(1);
+    expect(payload.dailyFiles[0]?.date).toBe('2026-02-18');
+  });
+
+  it('blocks lane export for parent members without operations manager access', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    await writeControlPlaneFamilyConfig(haloHome);
+    const laneId = 'child_private:child-1';
+
+    const store = await makeSessionStore(haloHome);
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'GET',
+        url: `/memory/lanes/${encodeURIComponent(laneId)}/export?memberId=parent-2`,
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body)).toEqual({
+      error: 'operations_forbidden',
+      reason: 'parent_not_manager',
+    });
+  });
+
+  it('runs lane retention with per-lane policy defaults', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    await writeControlPlaneFamilyConfig(haloHome);
+    const laneId = 'child_private:child-1';
+
+    await appendLaneDailyNotesUnique(
+      { rootDir: haloHome, laneId },
+      ['Old entry'],
+      new Date('2026-02-01T10:00:00.000Z'),
+    );
+    await appendLaneDailyNotesUnique(
+      { rootDir: haloHome, laneId },
+      ['Recent entry'],
+      new Date('2026-02-16T10:00:00.000Z'),
+    );
+
+    const store = await makeSessionStore(haloHome);
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'POST',
+        url: `/memory/lanes/${encodeURIComponent(laneId)}/retention/run?memberId=parent-1&now=2026-02-18T10:00:00.000Z`,
+        socket: { remoteAddress: '127.0.0.1' },
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(200);
+    const payload = JSON.parse(res.body) as {
+      retentionDays: number;
+      deletedFiles: string[];
+      keptFiles: string[];
+    };
+    expect(payload.retentionDays).toBe(7);
+    expect(payload.deletedFiles).toEqual(['2026-02-01.md']);
+    expect(payload.keptFiles).toContain('2026-02-16.md');
+  });
+
+  it('deletes lane memory to recoverable trash for parent managers', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    await writeControlPlaneFamilyConfig(haloHome);
+    const laneId = 'child_private:child-1';
+
+    await appendLaneLongTermFacts({ rootDir: haloHome, laneId }, ['Delete me']);
+
+    const store = await makeSessionStore(haloHome);
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'POST',
+        url: `/memory/lanes/${encodeURIComponent(laneId)}/delete?memberId=parent-1`,
+        socket: { remoteAddress: '127.0.0.1' },
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(200);
+
+    const payload = JSON.parse(res.body) as {
+      deleted: boolean;
+      trashPath: string;
+    };
+    expect(payload.deleted).toBe(true);
+
+    const longTermPath = getLaneLongTermPath({ rootDir: haloHome, laneId });
+    await expect(stat(longTermPath)).rejects.toThrow();
+    await expect(stat(payload.trashPath)).resolves.toBeTruthy();
+  });
+
+  it('creates runtime backups for configured operations managers', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    await writeControlPlaneFamilyConfig(haloHome);
+
+    await mkdir(path.join(haloHome, 'config'), { recursive: true });
+    await writeFile(path.join(haloHome, 'config', 'family.json'), '{"version":1}\n', 'utf8');
+
+    const store = await makeSessionStore(haloHome);
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'POST',
+        url: '/operations/backup/create?memberId=parent-1&backupId=daily-1',
+        socket: { remoteAddress: '127.0.0.1' },
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(200);
+    const payload = JSON.parse(res.body) as {
+      backupId: string;
+      manifestPath: string;
+      includedPaths: string[];
+    };
+
+    expect(payload.backupId).toBe('daily-1');
+    expect(payload.includedPaths).toContain('config');
+    await expect(stat(payload.manifestPath)).resolves.toBeTruthy();
+  });
+
+  it('restores runtime backups for configured operations managers', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    await writeControlPlaneFamilyConfig(haloHome);
+
+    await mkdir(path.join(haloHome, 'config'), { recursive: true });
+    const familyConfigPath = path.join(haloHome, 'config', 'family.json');
+    await writeFile(familyConfigPath, '{"version":1}\n', 'utf8');
+
+    const store = await makeSessionStore(haloHome);
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+    });
+
+    const backupRes = makeMockResponse();
+    await handler(
+      {
+        method: 'POST',
+        url: '/operations/backup/create?memberId=parent-1&backupId=daily-2',
+        socket: { remoteAddress: '127.0.0.1' },
+      },
+      backupRes,
+    );
+
+    expect(backupRes.statusCode).toBe(200);
+
+    await writeFile(familyConfigPath, '{"version":2}\n', 'utf8');
+
+    const restoreRes = makeMockResponse();
+    await handler(
+      {
+        method: 'POST',
+        url: '/operations/backup/restore?memberId=parent-1&backupId=daily-2',
+        socket: { remoteAddress: '127.0.0.1' },
+      },
+      restoreRes,
+    );
+
+    expect(restoreRes.statusCode).toBe(200);
+    const payload = JSON.parse(restoreRes.body) as {
+      backupId: string;
+      restoredPaths: string[];
+    };
+    expect(payload.backupId).toBe('daily-2');
+    expect(payload.restoredPaths).toContain('config');
+    expect(await readFile(familyConfigPath, 'utf8')).toBe('{"version":1}\n');
+  });
+
+  it('blocks backup operations for non-manager parents', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    await writeControlPlaneFamilyConfig(haloHome);
+
+    const store = await makeSessionStore(haloHome);
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'POST',
+        url: '/operations/backup/create?memberId=parent-2',
+        socket: { remoteAddress: '127.0.0.1' },
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body)).toEqual({
+      error: 'operations_forbidden',
+      reason: 'parent_not_manager',
+    });
+  });
+
+  it('reports backup restore failures with an actionable incident payload', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    await writeControlPlaneFamilyConfig(haloHome);
+
+    const store = await makeSessionStore(haloHome);
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'POST',
+        url: '/operations/backup/restore?memberId=parent-1&backupId=missing-backup',
+        socket: { remoteAddress: '127.0.0.1' },
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(500);
+    expect(JSON.parse(res.body)).toMatchObject({
+      error: 'backup_operation_failed',
+      message: expect.stringContaining('missing-backup'),
+    });
+
+    const incidentPath = path.join(haloHome, 'logs', 'incidents.jsonl');
+    const incidentLog = await readFile(incidentPath, 'utf8');
+    expect(incidentLog).toContain('backup_manifest_missing');
   });
 
   it('purges session data for /sessions/:scopeId/purge', async () => {
