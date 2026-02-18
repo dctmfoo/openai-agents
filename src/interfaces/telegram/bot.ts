@@ -3,15 +3,30 @@ import path from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { type AgentInputItem } from '@openai/agents';
 import { Bot } from 'grammy';
+import OpenAI, { toFile } from 'openai';
 import { runPrime } from '../../prime/prime.js';
 import { appendScopedDailyNote } from '../../memory/scopedMemory.js';
 import { loadFamilyConfig, type FamilyConfig } from '../../runtime/familyConfig.js';
+import {
+  acceptOnboardingInvite,
+  bootstrapParentOnboarding,
+  issueOnboardingInvite,
+} from '../../runtime/onboardingFlow.js';
 import type { FileMemoryConfig, ToolsConfig } from '../../runtime/haloConfig.js';
 import { getHaloHome } from '../../runtime/haloHome.js';
 import { appendJsonl, type EventLogRecord } from '../../utils/logging.js';
 import { createRuntimeLogger, serializeError } from '../../utils/runtimeLogger.js';
-import { resolveTelegramPolicy, type TelegramPolicyDecision } from './policy.js';
-import { getScopeVectorStoreId } from '../../files/scopeFileRegistry.js';
+import { runTelegramOnboardingCommand } from './onboardingCommands.js';
+import {
+  resolveTelegramPolicy,
+  type TelegramPolicyDecision,
+  type TelegramPolicyIntent,
+} from './policy.js';
+import { buildScopeCitationPolicy } from '../../files/citationPolicy.js';
+import {
+  getScopeVectorStoreId,
+  readScopeFileRegistry,
+} from '../../files/scopeFileRegistry.js';
 import { hashSessionId } from '../../sessions/sessionHash.js';
 import { TOOL_NAMES } from '../../tools/toolNames.js';
 import {
@@ -35,6 +50,14 @@ type TelegramPhotoSize = {
   file_size?: number;
 };
 
+type TelegramVoice = {
+  file_id: string;
+  file_unique_id: string;
+  duration: number;
+  mime_type?: string;
+  file_size?: number;
+};
+
 export type TelegramContext = {
   chat: { id: number; type: string };
   message: {
@@ -42,6 +65,7 @@ export type TelegramContext = {
     caption?: string;
     document?: TelegramDocument;
     photo?: TelegramPhotoSize[];
+    voice?: TelegramVoice;
     message_id: number;
   };
   from?: { id?: number | string };
@@ -52,7 +76,11 @@ export type TelegramContext = {
   };
 };
 
-type TelegramMessageEvent = 'message:text' | 'message:document' | 'message:photo';
+type TelegramMessageEvent =
+  | 'message:text'
+  | 'message:document'
+  | 'message:photo'
+  | 'message:voice';
 
 export type TelegramBotLike = {
   on: (event: TelegramMessageEvent, handler: (ctx: TelegramContext) => Promise<void> | void) => void;
@@ -65,12 +93,19 @@ type DownloadedTelegramFile = {
   filePath?: string;
 };
 
+type VoiceTranscriptionInput = {
+  bytes: Uint8Array;
+  filename: string;
+  mimeType: string;
+};
+
 type TelegramAdapterDeps = {
   runPrime: typeof runPrime;
   appendScopedDailyNote: typeof appendScopedDailyNote;
   appendJsonl: typeof appendJsonl;
   loadFamilyConfig: typeof loadFamilyConfig;
   getScopeVectorStoreId: typeof getScopeVectorStoreId;
+  readScopeFileRegistry: typeof readScopeFileRegistry;
   downloadTelegramFile: (input: {
     ctx: TelegramContext;
     token: string;
@@ -88,7 +123,13 @@ type TelegramAdapterDeps = {
     bytes: Uint8Array;
     maxFilesPerScope: number;
     pollIntervalMs: number;
+    laneId?: string;
+    policyVersion?: string;
   }) => Promise<IndexTelegramDocumentResult>;
+  transcribeVoiceNote: (input: VoiceTranscriptionInput) => Promise<string>;
+  bootstrapParentOnboarding: typeof bootstrapParentOnboarding;
+  issueOnboardingInvite: typeof issueOnboardingInvite;
+  acceptOnboardingInvite: typeof acceptOnboardingInvite;
 };
 
 export type TelegramAdapterOptions = {
@@ -99,6 +140,7 @@ export type TelegramAdapterOptions = {
   fileMemory?: FileMemoryConfig;
   toolsConfig?: ToolsConfig;
   bot?: TelegramBotLike;
+  botUsername?: string;
   now?: () => Date;
   deps?: Partial<TelegramAdapterDeps>;
 };
@@ -147,11 +189,20 @@ const TELEGRAM_VISION_DISABLED_TOOLS = [
   TOOL_NAMES.shell,
 ] as const;
 
+const TELEGRAM_VOICE_TRANSCRIPTION_MODEL = 'gpt-4o-mini-transcribe';
+const TELEGRAM_VOICE_TRANSCRIPTION_MAX_RETRIES = 2;
+const TELEGRAM_VOICE_TRANSCRIPTION_FALLBACK_REPLY =
+  'I couldn\'t transcribe that voice note right now. Please type your message or try another voice note.';
+
 const TELEGRAM_RESTART_EXIT_CODE = 43;
 const TELEGRAM_RESTART_DELAY_MS = 1000;
 const TELEGRAM_RESTART_REPLY = '🔨 Building and restarting halo...';
 const TELEGRAM_RESTART_DENIED_REPLY = 'Restart is only available in parent DMs.';
 const TELEGRAM_RESTART_COMMANDS = new Set(['restart', 'br']);
+
+const TELEGRAM_DEFAULT_BOT_USERNAME = 'halo';
+const TELEGRAM_POLICY_CAPABILITY_CHAT_RESPOND = 'chat.respond';
+const TELEGRAM_POLICY_CAPABILITY_CHAT_RESPOND_GROUP_SAFE = 'chat.respond.group_safe';
 
 type TelegramSlashCommand = {
   commandName: string;
@@ -167,6 +218,81 @@ function parseTelegramSlashCommand(text: string): TelegramSlashCommand | null {
     commandName: match[1].toLowerCase(),
     addressedBotUsername: match[2],
     args: match[3]?.trim() ?? '',
+  };
+}
+
+function normalizeBotUsername(botUsername: string | undefined): string {
+  const normalized = botUsername?.trim().replace(/^@/, '').toLowerCase();
+  if (!normalized) {
+    return TELEGRAM_DEFAULT_BOT_USERNAME;
+  }
+
+  return normalized;
+}
+
+function hasBotMention(text: string | undefined, botUsername: string): boolean {
+  const value = text?.trim();
+  if (!value) {
+    return false;
+  }
+
+  const mentionRegex = /(?:^|\s)@([a-zA-Z0-9_]{3,})\b/g;
+  let match = mentionRegex.exec(value);
+
+  while (match) {
+    const mentioned = match[1]?.toLowerCase();
+    if (mentioned === botUsername) {
+      return true;
+    }
+
+    match = mentionRegex.exec(value);
+  }
+
+  return false;
+}
+
+function resolveTextIntent(input: {
+  chatType: string;
+  text: string;
+  slashCommand: TelegramSlashCommand | null;
+  botUsername: string;
+}): TelegramPolicyIntent {
+  const command = input.slashCommand ? `/${input.slashCommand.commandName}` : undefined;
+
+  if (input.chatType === 'private') {
+    return {
+      isMentioned: false,
+      command,
+    };
+  }
+
+  if (input.slashCommand?.addressedBotUsername) {
+    const addressed = input.slashCommand.addressedBotUsername.toLowerCase();
+    return {
+      isMentioned: addressed === input.botUsername,
+      command,
+    };
+  }
+
+  return {
+    isMentioned: hasBotMention(input.text, input.botUsername),
+    command,
+  };
+}
+
+function resolveCaptionIntent(input: {
+  chatType: string;
+  caption?: string;
+  botUsername: string;
+}): TelegramPolicyIntent {
+  if (input.chatType === 'private') {
+    return {
+      isMentioned: false,
+    };
+  }
+
+  return {
+    isMentioned: hasBotMention(input.caption, input.botUsername),
   };
 }
 
@@ -410,6 +536,78 @@ async function defaultDownloadTelegramFile(
   };
 }
 
+type OpenAIClientLike = {
+  audio: {
+    transcriptions: {
+      create: (input: {
+        file: unknown;
+        model: string;
+      }) => Promise<{ text?: string } | string>;
+    };
+  };
+};
+
+function getDefaultOpenAIClient(): OpenAIClientLike {
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is required for voice transcription.');
+  }
+
+  return new OpenAI({ apiKey }) as unknown as OpenAIClientLike;
+}
+
+async function defaultTranscribeVoiceNote(input: VoiceTranscriptionInput): Promise<string> {
+  const client = getDefaultOpenAIClient();
+  const audioFile = await toFile(input.bytes, input.filename, {
+    type: input.mimeType,
+    lastModified: Date.now(),
+  });
+
+  const transcription = await client.audio.transcriptions.create({
+    file: audioFile,
+    model: TELEGRAM_VOICE_TRANSCRIPTION_MODEL,
+  });
+
+  if (typeof transcription === 'string') {
+    const text = transcription.trim();
+    if (!text) {
+      throw new Error('Transcription returned empty text.');
+    }
+
+    return text;
+  }
+
+  const text = transcription.text?.trim() ?? '';
+  if (!text) {
+    throw new Error('Transcription returned empty text.');
+  }
+
+  return text;
+}
+
+function resolveRequiredReplyCapability(policy: TelegramPolicyDecision): string {
+  if (policy.scopeType === 'parents_group' || policy.scopeType === 'family_group') {
+    return TELEGRAM_POLICY_CAPABILITY_CHAT_RESPOND_GROUP_SAFE;
+  }
+
+  return TELEGRAM_POLICY_CAPABILITY_CHAT_RESPOND;
+}
+
+function hasRequiredReplyCapability(policy: TelegramPolicyDecision): boolean {
+  const capability = resolveRequiredReplyCapability(policy);
+  return policy.allowedCapabilities.includes(capability);
+}
+
+function toPrimeScopeType(
+  scopeType: TelegramPolicyDecision['scopeType'],
+): 'dm' | 'parents_group' | undefined {
+  if (scopeType === 'dm' || scopeType === 'parents_group') {
+    return scopeType;
+  }
+
+  return undefined;
+}
+
 export function createTelegramAdapter(options: TelegramAdapterOptions): TelegramAdapter {
   const {
     token,
@@ -417,11 +615,14 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
     logDir = path.join(haloHome, 'logs'),
     rootDir = haloHome,
     bot: providedBot,
+    botUsername,
     fileMemory = DEFAULT_FILE_MEMORY_CONFIG,
     toolsConfig,
     now = () => new Date(),
     deps = {},
   } = options;
+
+  const normalizedBotUsername = normalizeBotUsername(botUsername);
 
   if (!token) {
     throw new Error('Missing TELEGRAM_BOT_TOKEN in environment');
@@ -433,16 +634,26 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
     appendJsonl: appendJsonlImpl,
     loadFamilyConfig: loadFamilyConfigImpl,
     getScopeVectorStoreId: getScopeVectorStoreIdImpl,
+    readScopeFileRegistry: readScopeFileRegistryImpl,
     downloadTelegramFile: downloadTelegramFileImpl,
     indexTelegramDocument: indexTelegramDocumentImpl,
+    transcribeVoiceNote: transcribeVoiceNoteImpl,
+    bootstrapParentOnboarding: bootstrapParentOnboardingImpl,
+    issueOnboardingInvite: issueOnboardingInviteImpl,
+    acceptOnboardingInvite: acceptOnboardingInviteImpl,
   } = {
     runPrime,
     appendScopedDailyNote,
     appendJsonl,
     loadFamilyConfig,
     getScopeVectorStoreId,
+    readScopeFileRegistry,
     downloadTelegramFile: defaultDownloadTelegramFile,
     indexTelegramDocument,
+    transcribeVoiceNote: defaultTranscribeVoiceNote,
+    bootstrapParentOnboarding,
+    issueOnboardingInvite,
+    acceptOnboardingInvite,
     ...deps,
   };
 
@@ -459,6 +670,7 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
     fileMemoryEnabled: fileMemory.enabled,
     fileUploadEnabled: fileMemory.uploadEnabled,
     shellToolEnabled: toolsConfig?.shell?.enabled ?? false,
+    botUsername: normalizedBotUsername,
   });
 
   let familyConfigPromise: Promise<FamilyConfig> | null = null;
@@ -509,13 +721,18 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
     }
   };
 
-  const resolvePolicy = async (ctx: TelegramContext, userId: string): Promise<TelegramPolicyDecision | null> => {
+  const resolvePolicy = async (
+    ctx: TelegramContext,
+    userId: string,
+    intent: TelegramPolicyIntent,
+  ): Promise<TelegramPolicyDecision | null> => {
     try {
       const familyConfig = await getFamilyConfig();
       return resolveTelegramPolicy({
         chat: ctx.chat,
         fromId: ctx.from?.id,
         family: familyConfig,
+        intent,
       });
     } catch (err) {
       await writeLog({
@@ -555,6 +772,130 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
     return null;
   };
 
+  const ensurePolicyReplyCapability = async (
+    ctx: TelegramContext,
+    userId: string,
+    scopeId: string,
+    policy: TelegramPolicyDecision,
+    action: string,
+  ): Promise<boolean> => {
+    if (hasRequiredReplyCapability(policy)) {
+      return true;
+    }
+
+    const requiredCapability = resolveRequiredReplyCapability(policy);
+
+    await writeLog({
+      ts: now().toISOString(),
+      type: 'prime.run.error',
+      data: {
+        channel: 'telegram',
+        userId,
+        scopeId,
+        action,
+        error: {
+          name: 'PolicyCapabilityError',
+          message: `Missing required envelope capability: ${requiredCapability}`,
+          rationale: policy.rationale,
+        },
+      },
+    });
+
+    if (ctx.chat.type === 'private') {
+      await ctx.reply('I cannot respond in this context right now.');
+    }
+
+    return false;
+  };
+
+  const resolveFileSearchState = async (input: {
+    userId: string;
+    scopeId: string;
+    primeScopeType: 'dm' | 'parents_group' | undefined;
+    policy: TelegramPolicyDecision;
+  }): Promise<{ enabled: boolean; vectorStoreId?: string }> => {
+    const fileSearchRequested = fileMemory.enabled && input.primeScopeType !== undefined;
+
+    let fileSearchVectorStoreId: string | null = null;
+    let fileSearchAllowedByLanePolicy = true;
+
+    if (fileSearchRequested) {
+      try {
+        fileSearchVectorStoreId = await getScopeVectorStoreIdImpl({
+          rootDir,
+          scopeId: input.scopeId,
+        });
+      } catch (err) {
+        await writeLog({
+          ts: now().toISOString(),
+          type: 'prime.run.error',
+          data: {
+            channel: 'telegram',
+            userId: input.userId,
+            scopeId: input.scopeId,
+            error: serializeError(err),
+          },
+        });
+      }
+    }
+
+    if (fileSearchRequested && fileSearchVectorStoreId) {
+      try {
+        const registry = await readScopeFileRegistryImpl({
+          rootDir,
+          scopeId: input.scopeId,
+        });
+
+        if (registry && registry.files.length > 0) {
+          const citationPolicy = buildScopeCitationPolicy({
+            files: registry.files.map((file) => {
+              return {
+                filename: file.filename,
+                storageMetadata: file.storageMetadata,
+              };
+            }),
+            allowedLaneIds: input.policy.allowedMemoryReadLanes,
+            allowedScopeIds: [input.scopeId],
+          });
+
+          const allFilesBlocked =
+            citationPolicy.disallowedFilenames.length >= registry.files.length;
+          if (allFilesBlocked) {
+            fileSearchAllowedByLanePolicy = false;
+          }
+        }
+      } catch (err) {
+        fileSearchAllowedByLanePolicy = false;
+
+        await writeLog({
+          ts: now().toISOString(),
+          type: 'prime.run.error',
+          data: {
+            channel: 'telegram',
+            userId: input.userId,
+            scopeId: input.scopeId,
+            action: 'file_search_lane_guard',
+            error: serializeError(err),
+          },
+        });
+      }
+    }
+
+    const enabled =
+      fileSearchRequested &&
+      Boolean(fileSearchVectorStoreId) &&
+      fileSearchAllowedByLanePolicy;
+
+    if (!enabled || !fileSearchVectorStoreId) {
+      return { enabled: false };
+    }
+
+    return {
+      enabled: true,
+      vectorStoreId: fileSearchVectorStoreId,
+    };
+  };
+
   const handleVisionMessage = async (
     ctx: TelegramContext,
     input: {
@@ -568,13 +909,14 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
       caption?: string;
       width?: number;
       height?: number;
+      intent: TelegramPolicyIntent;
     },
   ) => {
     const receivedAt = now();
     const elapsedMs = () => Math.max(0, now().getTime() - receivedAt.getTime());
     const userId = String(ctx.from?.id ?? 'unknown');
 
-    const policy = await resolvePolicy(ctx, userId);
+    const policy = await resolvePolicy(ctx, userId, input.intent);
     if (!policy) return;
 
     if (!policy.allow) {
@@ -599,6 +941,17 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
 
     const scopeId = await resolveScopeId(ctx, userId, policy);
     if (!scopeId) return;
+
+    const canReply = await ensurePolicyReplyCapability(
+      ctx,
+      userId,
+      scopeId,
+      policy,
+      'vision',
+    );
+    if (!canReply) {
+      return;
+    }
 
     await writeLog({
       ts: now().toISOString(),
@@ -789,12 +1142,14 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
         rootDir,
         role: policy.role,
         ageGroup: policy.ageGroup,
-        scopeType: policy.scopeType,
+        scopeType: toPrimeScopeType(policy.scopeType),
         fileSearchEnabled: false,
         contextMode: 'light',
         disabledToolNames: [...TELEGRAM_VISION_DISABLED_TOOLS],
         disableSession: true,
         toolsConfig,
+        allowedMemoryReadLanes: policy.allowedMemoryReadLanes,
+        allowedMemoryReadScopes: [scopeId],
       });
       const finalOutput = String(result.finalOutput ?? '').trim() || '(no output)';
 
@@ -856,7 +1211,15 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
       },
     });
 
-    const policy = await resolvePolicy(ctx, userId);
+    const slashCommand = parseTelegramSlashCommand(text);
+    const intent = resolveTextIntent({
+      chatType: ctx.chat.type,
+      text,
+      slashCommand,
+      botUsername: normalizedBotUsername,
+    });
+
+    const policy = await resolvePolicy(ctx, userId, intent);
     if (!policy) return;
 
     if (!policy.allow) {
@@ -869,7 +1232,19 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
     const scopeId = await resolveScopeId(ctx, userId, policy);
     if (!scopeId) return;
 
-    const slashCommand = parseTelegramSlashCommand(text);
+    const canReply = await ensurePolicyReplyCapability(
+      ctx,
+      userId,
+      scopeId,
+      policy,
+      'chat',
+    );
+    if (!canReply) {
+      return;
+    }
+
+    const primeScopeType = toPrimeScopeType(policy.scopeType);
+
     if (slashCommand && TELEGRAM_RESTART_COMMANDS.has(slashCommand.commandName)) {
       if (policy.role !== 'parent' || policy.scopeType !== 'dm') {
         await ctx.reply(TELEGRAM_RESTART_DENIED_REPLY);
@@ -895,23 +1270,38 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
       return;
     }
 
-    let fileSearchVectorStoreId: string | null = null;
-    if (fileMemory.enabled) {
-      try {
-        fileSearchVectorStoreId = await getScopeVectorStoreIdImpl({ rootDir, scopeId });
-      } catch (err) {
-        await writeLog({
-          ts: now().toISOString(),
-          type: 'prime.run.error',
-          data: {
-            channel: 'telegram',
-            userId,
-            scopeId,
-            error: serializeError(err),
-          },
-        });
+    if (slashCommand) {
+      const familyConfig = await getFamilyConfig();
+      const onboardingCommand = await runTelegramOnboardingCommand(
+        {
+          command: slashCommand,
+          policy,
+          family: familyConfig,
+          haloHome,
+          telegramFromId: ctx.from?.id,
+          now: now(),
+        },
+        {
+          bootstrapParentOnboarding: bootstrapParentOnboardingImpl,
+          issueOnboardingInvite: issueOnboardingInviteImpl,
+          acceptOnboardingInvite: acceptOnboardingInviteImpl,
+        },
+      );
+
+      if (onboardingCommand.handled) {
+        if (onboardingCommand.reply) {
+          await ctx.reply(onboardingCommand.reply);
+        }
+        return;
       }
     }
+
+    const fileSearchState = await resolveFileSearchState({
+      userId,
+      scopeId,
+      primeScopeType,
+      policy,
+    });
 
     await writeLog({
       ts: now().toISOString(),
@@ -927,12 +1317,14 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
         rootDir,
         role: policy.role,
         ageGroup: policy.ageGroup,
-        scopeType: policy.scopeType,
-        fileSearchEnabled: fileMemory.enabled,
-        fileSearchVectorStoreId: fileSearchVectorStoreId ?? undefined,
+        scopeType: primeScopeType,
+        fileSearchEnabled: fileSearchState.enabled,
+        fileSearchVectorStoreId: fileSearchState.vectorStoreId,
         fileSearchIncludeResults: fileMemory.includeSearchResults,
         fileSearchMaxNumResults: fileMemory.maxNumResults,
         toolsConfig,
+        allowedMemoryReadLanes: policy.allowedMemoryReadLanes,
+        allowedMemoryReadScopes: [scopeId],
       });
       const finalOutput = String(result.finalOutput ?? '').trim() || '(no output)';
 
@@ -967,6 +1359,191 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
     }
   });
 
+  bot.on('message:voice', async (ctx) => {
+    const voice = ctx.message.voice;
+    if (!voice) return;
+
+    const receivedAtMs = now().getTime();
+    const elapsedMs = () => Math.max(0, now().getTime() - receivedAtMs);
+    const userId = String(ctx.from?.id ?? 'unknown');
+    const intent = resolveCaptionIntent({
+      chatType: ctx.chat.type,
+      caption: ctx.message.caption,
+      botUsername: normalizedBotUsername,
+    });
+
+    await writeLog({
+      ts: now().toISOString(),
+      type: 'telegram.update',
+      data: {
+        chatId: ctx.chat.id,
+        userId,
+        messageId: ctx.message.message_id,
+        voiceFileId: voice.file_id,
+        voiceFileUniqueId: voice.file_unique_id,
+        durationSeconds: voice.duration,
+        mimeType: voice.mime_type ?? null,
+        sizeBytes: voice.file_size ?? null,
+      },
+    });
+
+    const policy = await resolvePolicy(ctx, userId, intent);
+    if (!policy) return;
+
+    if (!policy.allow) {
+      if (policy.reason === 'unknown_user' && ctx.chat.type === 'private') {
+        await ctx.reply(UNKNOWN_DM_REPLY);
+      }
+      return;
+    }
+
+    const scopeId = await resolveScopeId(ctx, userId, policy);
+    if (!scopeId) return;
+
+    const canReply = await ensurePolicyReplyCapability(
+      ctx,
+      userId,
+      scopeId,
+      policy,
+      'voice_note',
+    );
+    if (!canReply) {
+      return;
+    }
+
+    let downloaded: DownloadedTelegramFile;
+    try {
+      downloaded = await downloadTelegramFileImpl({
+        ctx,
+        token,
+        fileId: voice.file_id,
+      });
+    } catch (err) {
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'prime.run.error',
+        data: {
+          channel: 'telegram',
+          action: 'voice_note_download',
+          userId,
+          scopeId,
+          error: serializeError(err),
+        },
+      });
+
+      await ctx.reply('Could not download that voice note. Please try again.');
+      return;
+    }
+
+    const voiceMimeType = voice.mime_type?.trim() || 'audio/ogg';
+    const voiceFilename = `voice-${voice.file_unique_id}.ogg`;
+
+    let transcript: string | null = null;
+    const maxAttempts = TELEGRAM_VOICE_TRANSCRIPTION_MAX_RETRIES + 1;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        transcript = await transcribeVoiceNoteImpl({
+          bytes: downloaded.bytes,
+          filename: voiceFilename,
+          mimeType: voiceMimeType,
+        });
+        break;
+      } catch (err) {
+        await writeLog({
+          ts: now().toISOString(),
+          type: 'prime.run.error',
+          data: {
+            channel: 'telegram',
+            action: 'voice_note_transcription',
+            userId,
+            scopeId,
+            attempt,
+            maxAttempts,
+            durationMs: elapsedMs(),
+            error: serializeError(err),
+          },
+        });
+      }
+    }
+
+    if (!transcript) {
+      await ctx.reply(TELEGRAM_VOICE_TRANSCRIPTION_FALLBACK_REPLY);
+      return;
+    }
+
+    const primeScopeType = toPrimeScopeType(policy.scopeType);
+    const fileSearchState = await resolveFileSearchState({
+      userId,
+      scopeId,
+      primeScopeType,
+      policy,
+    });
+
+    await writeLog({
+      ts: now().toISOString(),
+      type: 'prime.run.start',
+      data: {
+        channel: 'telegram',
+        action: 'voice_note',
+        userId,
+        scopeId,
+      },
+    });
+
+    try {
+      const result = await runPrimeImpl(transcript, {
+        channel: 'telegram',
+        userId,
+        scopeId,
+        rootDir,
+        role: policy.role,
+        ageGroup: policy.ageGroup,
+        scopeType: primeScopeType,
+        fileSearchEnabled: fileSearchState.enabled,
+        fileSearchVectorStoreId: fileSearchState.vectorStoreId,
+        fileSearchIncludeResults: fileMemory.includeSearchResults,
+        fileSearchMaxNumResults: fileMemory.maxNumResults,
+        toolsConfig,
+        allowedMemoryReadLanes: policy.allowedMemoryReadLanes,
+        allowedMemoryReadScopes: [scopeId],
+      });
+
+      const finalOutput = String(result.finalOutput ?? '').trim() || '(no output)';
+
+      await appendScopedDailyNoteImpl({ rootDir, scopeId }, `[user:voice] ${transcript}`);
+      await appendScopedDailyNoteImpl({ rootDir, scopeId }, `[prime] ${finalOutput}`);
+
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'prime.run.success',
+        data: {
+          channel: 'telegram',
+          action: 'voice_note',
+          userId,
+          scopeId,
+          finalOutput: result.finalOutput,
+        },
+      });
+
+      await ctx.reply(finalOutput);
+    } catch (err) {
+      await writeLog({
+        ts: now().toISOString(),
+        type: 'prime.run.error',
+        data: {
+          channel: 'telegram',
+          action: 'voice_note',
+          userId,
+          scopeId,
+          error: serializeError(err),
+        },
+      });
+
+      await ctx.reply('Something went wrong while handling that voice note. Please try again.');
+    }
+  });
+
   bot.on('message:document', async (ctx) => {
     const document = ctx.message.document;
     if (!document) return;
@@ -975,6 +1552,11 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
     const elapsedMs = () => Math.max(0, now().getTime() - receivedAtMs);
     const userId = String(ctx.from?.id ?? 'unknown');
     const uploadId = buildUploadId(ctx, document);
+    const intent = resolveCaptionIntent({
+      chatType: ctx.chat.type,
+      caption: ctx.message.caption,
+      botUsername: normalizedBotUsername,
+    });
 
     await writeLog({
       ts: now().toISOString(),
@@ -1018,11 +1600,12 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
         mimeType: document.mime_type,
         declaredSizeBytes: document.file_size,
         caption: ctx.message.caption,
+        intent,
       });
       return;
     }
 
-    const policy = await resolvePolicy(ctx, userId);
+    const policy = await resolvePolicy(ctx, userId, intent);
     if (!policy) return;
 
     if (!policy.allow) {
@@ -1047,6 +1630,17 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
 
     const scopeId = await resolveScopeId(ctx, userId, policy);
     if (!scopeId) return;
+
+    const canReply = await ensurePolicyReplyCapability(
+      ctx,
+      userId,
+      scopeId,
+      policy,
+      'file_upload',
+    );
+    if (!canReply) {
+      return;
+    }
 
     if (!fileMemory.enabled) {
       await writeLog({
@@ -1274,6 +1868,8 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
         bytes: downloaded.bytes,
         maxFilesPerScope: fileMemory.maxFilesPerScope,
         pollIntervalMs: fileMemory.pollIntervalMs,
+        laneId: policy.allowedMemoryWriteLanes[0],
+        policyVersion: policy.policyVersion,
       });
 
       if (!result.ok) {
@@ -1391,6 +1987,11 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
     const userId = String(ctx.from?.id ?? 'unknown');
     const largestPhoto = getLargestPhotoSize(photoSizes);
     const uploadId = `${ctx.chat.id}:${ctx.message.message_id}:${largestPhoto.file_unique_id}`;
+    const intent = resolveCaptionIntent({
+      chatType: ctx.chat.type,
+      caption: ctx.message.caption,
+      botUsername: normalizedBotUsername,
+    });
 
     await writeLog({
       ts: now().toISOString(),
@@ -1418,6 +2019,7 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
       caption: ctx.message.caption,
       width: largestPhoto.width,
       height: largestPhoto.height,
+      intent,
     });
   });
 

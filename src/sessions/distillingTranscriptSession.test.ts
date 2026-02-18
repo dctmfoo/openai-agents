@@ -4,9 +4,17 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { SessionStore } from './sessionStore.js';
+import { TranscriptStore } from './transcriptStore.js';
 import { getScopedLongTermPath } from '../memory/scopedMemory.js';
-import type { AgentInputItem } from '@openai/agents';
-import { distillationDeps } from './distillingTranscriptSession.js';
+import type {
+  AgentInputItem,
+  OpenAIResponsesCompactionAwareSession,
+  OpenAIResponsesCompactionResult,
+} from '@openai/agents';
+import {
+  distillationDeps,
+  wrapWithTranscriptAndDistillation,
+} from './distillingTranscriptSession.js';
 
 const userMessage = (text: string) =>
   ({
@@ -87,6 +95,71 @@ describe('distillation trigger wiring', () => {
     } finally {
       distillationDeps.runDistillation = originalDistill;
       vi.useRealTimers();
+    }
+  });
+
+  it('flushes distillation when compaction is triggered and keeps retries idempotent', async () => {
+    const originalDistill = distillationDeps.runDistillation;
+    const spy = vi.fn().mockResolvedValue({ durableFacts: 0, temporalNotes: 0 });
+    distillationDeps.runDistillation = spy;
+
+    try {
+      const rootDir = await mkdtemp(path.join(tmpdir(), 'halo-distill-compaction-'));
+      const transcript = new TranscriptStore({
+        sessionId: 'telegram:dm:wags',
+        baseDir: path.join(rootDir, 'transcripts'),
+      });
+
+      const items: AgentInputItem[] = [];
+      const compactionSession: OpenAIResponsesCompactionAwareSession = {
+        getSessionId: async () => 'telegram:dm:wags',
+        getItems: async () => [...items],
+        addItems: async (nextItems) => {
+          items.push(...nextItems);
+        },
+        popItem: async () => items.pop(),
+        clearSession: async () => {
+          items.length = 0;
+        },
+        runCompaction: async () => {
+          return { summary: 'ok' } as unknown as OpenAIResponsesCompactionResult;
+        },
+      };
+
+      const session = wrapWithTranscriptAndDistillation(
+        compactionSession,
+        transcript,
+        'telegram:dm:wags',
+        {
+          enabled: true,
+          everyNItems: 50,
+          maxItems: 50,
+          rootDir,
+          mode: 'deterministic',
+        },
+      ) as OpenAIResponsesCompactionAwareSession & { running?: Promise<void> | null };
+
+      await session.addItems([userMessage('remember: compaction flush me')]);
+      expect(spy).toHaveBeenCalledTimes(0);
+
+      await session.runCompaction();
+
+      const running = session.running;
+      if (running) {
+        await running;
+      }
+
+      expect(spy).toHaveBeenCalledTimes(1);
+
+      await session.runCompaction();
+      const secondRunning = session.running;
+      if (secondRunning) {
+        await secondRunning;
+      }
+
+      expect(spy).toHaveBeenCalledTimes(2);
+    } finally {
+      distillationDeps.runDistillation = originalDistill;
     }
   });
 });

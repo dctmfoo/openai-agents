@@ -60,6 +60,98 @@ describe('haloConfig', () => {
     });
   });
 
+  it('defaults controlPlane profile mapping when omitted', async () => {
+    const haloHome = await mkdtemp(path.join(tmpdir(), 'halo-config-'));
+
+    await writeFile(
+      path.join(haloHome, 'config.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        gateway: { host: '127.0.0.1', port: 8787 },
+        features: { compactionEnabled: false, distillationEnabled: false },
+        memory: {
+          distillationEveryNItems: 20,
+          distillationMaxItems: 200,
+          distillationMode: 'deterministic',
+        },
+        childSafe: { enabled: true, maxMessageLength: 800, blockedTopics: [] },
+        semanticMemory: {
+          enabled: false,
+          embeddingProvider: 'openai',
+          embeddingModel: 'text-embedding-3-small',
+          embeddingDimensions: 1536,
+          syncIntervalMinutes: 15,
+          search: { fusionMethod: 'rrf', vectorWeight: 0.7, textWeight: 0.3, minScore: 0.005 },
+        },
+      }),
+      'utf8',
+    );
+
+    const config = await loadHaloConfig({ HALO_HOME: haloHome } as NodeJS.ProcessEnv);
+
+    expect(config.controlPlane).toEqual({
+      activeProfile: 'legacy',
+      profiles: {
+        legacy: {
+          path: 'config/family.json',
+        },
+      },
+    });
+  });
+
+  it('loads custom controlPlane profile mappings', async () => {
+    const haloHome = await mkdtemp(path.join(tmpdir(), 'halo-config-'));
+
+    await writeFile(
+      path.join(haloHome, 'config.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        gateway: { host: '127.0.0.1', port: 8787 },
+        features: { compactionEnabled: false, distillationEnabled: false },
+        memory: {
+          distillationEveryNItems: 20,
+          distillationMaxItems: 200,
+          distillationMode: 'deterministic',
+        },
+        childSafe: { enabled: true, maxMessageLength: 800, blockedTopics: [] },
+        semanticMemory: {
+          enabled: false,
+          embeddingProvider: 'openai',
+          embeddingModel: 'text-embedding-3-small',
+          embeddingDimensions: 1536,
+          syncIntervalMinutes: 15,
+          search: { fusionMethod: 'rrf', vectorWeight: 0.7, textWeight: 0.3, minScore: 0.005 },
+        },
+        controlPlane: {
+          activeProfile: 'v2',
+          profiles: {
+            legacy: {
+              path: 'config/family.json',
+            },
+            v2: {
+              path: 'config/control-plane.json',
+            },
+          },
+        },
+      }),
+      'utf8',
+    );
+
+    const config = await loadHaloConfig({ HALO_HOME: haloHome } as NodeJS.ProcessEnv);
+
+    expect(config.controlPlane).toEqual({
+      activeProfile: 'v2',
+      profiles: {
+        legacy: {
+          path: 'config/family.json',
+        },
+        v2: {
+          path: 'config/control-plane.json',
+        },
+      },
+    });
+  });
+
   it('loads custom fileMemory config values', async () => {
     const haloHome = await mkdtemp(path.join(tmpdir(), 'halo-config-'));
 

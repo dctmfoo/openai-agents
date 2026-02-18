@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 2,
+  "policyVersion": "v2.0.0",
+  "familyId": "default",
+  "activeProfileId": "local-family",
+  "profiles": [
+    {
+      "profileId": "parent_default",
+      "role": "parent",
+      "capabilityTierId": "parent_dm",
+      "memoryLanePolicyId": "parent_lane",
+      "modelPolicyId": "parent_model",
+      "safetyPolicyId": "parent_safety"
+    },
+    {
+      "profileId": "young_child",
+      "role": "child",
+      "capabilityTierId": "young_child_dm",
+      "memoryLanePolicyId": "young_child_lane",
+      "modelPolicyId": "young_child_model",
+      "safetyPolicyId": "young_child_safety"
+    },
+    {
+      "profileId": "adolescent",
+      "role": "child",
+      "capabilityTierId": "adolescent_dm",
+      "memoryLanePolicyId": "adolescent_lane",
+      "modelPolicyId": "adolescent_model",
+      "safetyPolicyId": "adolescent_safety"
+    }
+  ],
+  "members": [
+    {
+      "memberId": "wags",
+      "displayName": "Wags",
+      "role": "parent",
+      "profileId": "parent_default",
+      "telegramUserIds": [889348242]
+    },
+    {
+      "memberId": "kairav",
+      "displayName": "Kairav",
+      "role": "child",
+      "profileId": "young_child",
+      "telegramUserIds": [111111111]
+    },
+    {
+      "memberId": "manasa",
+      "displayName": "Manasa",
+      "role": "child",
+      "profileId": "adolescent",
+      "parentalVisibility": false,
+      "telegramUserIds": [222222222]
+    }
+  ],
+  "scopes": [
+    {
+      "scopeId": "telegram:parents_group",
+      "scopeType": "parents_group",
+      "telegramChatId": null
+    },
+    {
+      "scopeId": "telegram:family_group",
+      "scopeType": "family_group",
+      "telegramChatId": null
+    }
+  ],
+  "capabilityTiers": {
+    "parent_dm": ["chat.respond", "tools.shell", "tools.web_search"],
+    "young_child_dm": ["chat.respond"],
+    "adolescent_dm": ["chat.respond", "tools.web_search"]
+  },
+  "memoryLanePolicies": {
+    "parent_lane": {
+      "readLanes": ["parent_private:wags", "parents_shared", "family_shared"],
+      "writeLanes": ["parent_private:wags", "parents_shared"]
+    },
+    "young_child_lane": {
+      "readLanes": ["child_private:kairav", "child_shared"],
+      "writeLanes": ["child_private:kairav"]
+    },
+    "adolescent_lane": {
+      "readLanes": ["child_private:manasa", "child_shared"],
+      "writeLanes": ["child_private:manasa"]
+    }
+  },
+  "modelPolicies": {
+    "parent_model": {
+      "tier": "parent_default",
+      "model": "gpt-5.1",
+      "reason": "parent_dm_default"
+    },
+    "young_child_model": {
+      "tier": "child_default",
+      "model": "gpt-5.1-mini",
+      "reason": "young_child_dm_default"
+    },
+    "adolescent_model": {
+      "tier": "child_plus",
+      "model": "gpt-5.1-mini",
+      "reason": "adolescent_dm_default"
+    }
+  },
+  "safetyPolicies": {
+    "parent_safety": {
+      "riskLevel": "low",
+      "escalationPolicyId": "none"
+    },
+    "young_child_safety": {
+      "riskLevel": "medium",
+      "escalationPolicyId": "minor_default"
+    },
+    "adolescent_safety": {
+      "riskLevel": "medium",
+      "escalationPolicyId": "adolescent_default"
+    }
+  }
+}

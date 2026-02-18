@@ -107,18 +107,12 @@ Scope IDs follow the pattern `telegram:dm:<memberId>` or `telegram:parents_group
 
 ## Docs
 
-- [Vision](docs/00-vision.md)
-- [Scope (v1)](docs/01-scope.md)
-- [Telegram setup (halo)](docs/02-telegram-setup.md)
-- [Architecture](docs/03-architecture.md)
-- [Configuration](docs/04-config.md)
-- [Onboarding](docs/06-onboarding.md)
-- [Policies](docs/05-policies.md)
-- [Tools](docs/12-tools.md)
-- [Semantic indexing strategy](docs/13-semantic-indexing-strategy.md)
-- [OpenAI file search + Telegram upload plan](docs/14-openai-file-search-telegram-upload-plan.md)
-- [Troubleshooting](docs/11-troubleshooting.md)
-- [Smoke tests](docs/10-smoke-tests.md)
+Active foundation:
+- [Policy + Control Plane Blueprint (v2 foundation)](docs/18-policy-control-plane-blueprint.md)
+- [Family Architecture Discussion (in progress)](docs/17-family-architecture-discussion-in-progress.md)
+
+Legacy docs:
+- [Archive index](docs/archive/README.md)
 
 ## License
 

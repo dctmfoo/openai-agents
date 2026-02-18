@@ -2,7 +2,8 @@
 
 **Status:** IN_PROGRESS (discussion-only, no implementation in this doc)  
 **Owner:** Wags + contributors  
-**Last updated:** 2026-02-16
+**Last updated:** 2026-02-16  
+**Related blueprint:** `docs/18-policy-control-plane-blueprint.md`
 
 ---
 
@@ -70,22 +71,38 @@ These facts should drive architecture decisions:
 
 2. Shell tool execution modes:
    - hosted container mode and local shell mode are both supported.
-   - Source: <https://developers.openai.com/api/docs/guides/tools-shell.md>
+   - Source: <https://developers.openai.com/api/docs/guides/tools-shell>
 
 3. Hosted shell network policy:
    - outbound network is off by default;
    - org allowlist + request `network_policy` needed to enable;
    - `domain_secrets` for protected calls.
-   - Source: <https://developers.openai.com/api/docs/guides/tools-shell.md>
+   - Source: <https://developers.openai.com/api/docs/guides/tools-shell>
 
 4. Skills behavior:
    - skills are versioned bundles with `SKILL.md`;
    - model can choose when to invoke unless explicitly instructed.
-   - Source: <https://developers.openai.com/api/docs/guides/tools-skills.md>
+   - Source: <https://developers.openai.com/api/docs/guides/tools-skills>
 
 5. Long-run context handling:
    - server-side compaction and standalone `/responses/compact` are supported.
-   - Source: <https://developers.openai.com/api/docs/guides/context-management.md>
+   - Source: <https://developers.openai.com/api/docs/guides/context-management>
+
+6. Agents SDK guardrails:
+   - input/output/tool guardrails are available;
+   - tripwires can halt execution when unsafe behavior is detected.
+   - Source: <https://openai.github.io/openai-agents-js/guides/guardrails/>
+
+7. Moderation endpoint:
+   - `omni-moderation-latest` supports text/image classification for harmful categories.
+   - Source: <https://developers.openai.com/api/docs/guides/moderation>
+
+8. Safety best practices and agent safety:
+   - use layered safeguards (moderation, red-teaming, human oversight),
+   - and mitigate prompt injection/private-data leakage in agent workflows.
+   - Sources:
+     - <https://developers.openai.com/api/docs/guides/safety-best-practices>
+     - <https://developers.openai.com/api/docs/guides/agent-builder-safety>
 
 ---
 
@@ -194,7 +211,7 @@ Cons:
 
 ## 8) Discussion checkpoints (to lock before coding)
 
-1. **Profile model:** keep current age groups vs introduce extensible profile definitions now.
+1. **Profile model (locked):** use extensible profile definitions (config-driven), not hardcoded age thresholds in runtime logic.
 2. **Memory lane contract:** exact lane names and which contexts can read/write each lane.
 3. **Parent defaults:** define exact capability set and safety exceptions.
 4. **Child defaults:** define baseline and opt-in escalation model.
@@ -227,3 +244,4 @@ In the next pass, lock these in order:
 ## 11) Change log
 
 - 2026-02-16: Initial in-progress discussion draft created (functional-first baseline).
+- 2026-02-17: Locked profile-model direction to extensible, config-driven profiles (no hardcoded age thresholds).

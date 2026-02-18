@@ -1,8 +1,10 @@
 # AGENTS.md — Contributor & Agent Guide
 
-> **📌 Main Project Document: [docs/PROJECT-OVERVIEW.md](docs/PROJECT-OVERVIEW.md)**
-> 
-> For comprehensive project status, feature tracking, tech stack, and roadmap, see the Project Overview. This file (AGENTS.md) is for contributor/agent guidelines.
+> **🚨 FIRST READ (required): [docs/18-policy-control-plane-blueprint.md](docs/18-policy-control-plane-blueprint.md)**
+>
+> **Discussion context:** [docs/17-family-architecture-discussion-in-progress.md](docs/17-family-architecture-discussion-in-progress.md)
+>
+> Legacy docs are archived under `docs/archive/`.
 
 ---
 
@@ -31,7 +33,7 @@ Primary interface: **Telegram (private chats only)**. Secondary: local **Gateway
 - `src/memory/` — markdown memory file loader/writer and distillation.
 - `src/utils/` — logging utilities.
 - `apps/admin/` — Tauri v2 admin app (Vite dev server).
-- `docs/` — architecture notes, setup, **PROJECT-OVERVIEW.md**.
+- `docs/` — active policy/architecture docs (`17-*`, `18-*`) plus `archive/` for legacy docs.
 - `memory/` — repo-local daily memory logs (`YYYY-MM-DD.md`, CLI-only).
 - `SOUL.md`, `USER.md`, `MEMORY.md` — context files loaded into Prime.
 - `logs/` — runtime logs (`events.jsonl`, gitignored).
@@ -91,6 +93,19 @@ Style rules:
 - **No dead code** — remove unused imports, commented blocks, and unreachable branches.
 - **Comments explain why, not what** — if a comment explains what, simplify the code.
 
+## TypeScript code-generation guardrails (required)
+
+When generating or refactoring TypeScript, keep output deterministic, strongly typed, and reviewable:
+
+1. **Contract-first**: define/adjust domain types before implementation (`DecisionEnvelope`, policy inputs/outputs, etc.).
+2. **Boundary validation**: parse external/untrusted data (JSON/env/IO/API) at module boundaries (prefer `zod` where used).
+3. **No `any`**: use `unknown` + narrowing/parsing.
+4. **Explicit exported signatures**: exported functions must have explicit parameter and return types.
+5. **Exhaustive branching**: use discriminated unions + exhaustive `switch`/`if` checks for policy decisions.
+6. **Pure core logic**: policy resolution logic should be side-effect free; keep IO/wiring outside.
+7. **Small modules/functions**: one responsibility per function and focused files.
+8. **Tests with every behavior change**: add/adjust tests in the same slice (TDD red → green → refactor).
+
 ## Memory model (markdown files)
 
 - Scoped memory lives under `HALO_HOME/memory/scopes/<hash>/MEMORY.md` and `HALO_HOME/memory/scopes/<hash>/YYYY-MM-DD.md`.
@@ -143,13 +158,34 @@ Quality bar:
 - Memory writeback rules don’t regress.
 - Safety boundaries remain enforced.
 
+### 4) Pack delegation protocol in tmux (required when delegating)
+
+When delegating a plan slice to Pi in tmux, follow this protocol exactly:
+
+1. **Follow pack order** from `plan/slices/<Pack>/README.md` (no out-of-order slice execution).
+2. **One slice per tmux session** (clean attribution and deterministic review).
+3. **Do not start the next slice** until current slice is `DONE` with verification evidence.
+4. Delegation prompt must include:
+   - slice ID + functional objective,
+   - allowed files + forbidden files,
+   - strict TDD rule (red → green → refactor),
+   - exact verification commands,
+   - expected success conditions,
+   - handoff format (functional summary, files changed, test evidence, risk notes).
+5. Use skill: `.pi/skills/pi-tmux-slice-delegator/` with fixed model:
+   - `openai-codex/gpt-5.3-codex:xhigh`
+6. Run unattended with JSON output for deterministic capture:
+   - `--mode json --print`
+7. Capture and archive run evidence from:
+   - `.tmp/pi-runs/<session>.jsonl`
+
 ## Ralph runner (Codex loop)
 
 - `scripts/ralph/ralph.sh` expects `prd.json` with `branchName` and `userStories` (array of story objects with `id` + `passes`).
 
 ## Work in progress
 
-See [docs/PROJECT-OVERVIEW.md](docs/PROJECT-OVERVIEW.md) for current milestone and feature status.
+Use [docs/18-policy-control-plane-blueprint.md](docs/18-policy-control-plane-blueprint.md) as the active foundation and [docs/17-family-architecture-discussion-in-progress.md](docs/17-family-architecture-discussion-in-progress.md) for discussion context.
 
 ## Docs MCP (authoritative OpenAI docs loop — required)
 
