@@ -341,6 +341,67 @@ describe('decisionEnvelope precedence', () => {
     expect(envelope.rationale).toContain('high_risk_escalation_policy_profile_default');
   });
 
+  it('applies profile policy defaults via inferred profile ids for legacy child members', () => {
+    const familyWithLegacyChild = {
+      ...baseFamily,
+      members: [
+        {
+          memberId: 'wags',
+          displayName: 'Wags',
+          role: 'parent' as const,
+          profileId: 'parent_default',
+          telegramUserIds: [456],
+        },
+        {
+          memberId: 'kid',
+          displayName: 'Kid',
+          role: 'child' as const,
+          ageGroup: 'teen' as const,
+          telegramUserIds: [999],
+        },
+      ],
+    };
+
+    const mediumRisk = resolveDecisionEnvelope({
+      policyVersion: 'v2',
+      chat: { id: 999, type: 'private' },
+      fromId: 999,
+      family: familyWithLegacyChild,
+      intent: { isMentioned: false },
+      familyGroupChatId: 888,
+      safetySignal: { riskLevel: 'medium' },
+      profilePolicies: {
+        teen: {
+          mediumRiskParentNotificationDefault: false,
+        },
+      },
+    });
+
+    expect(mediumRisk.action).toBe('allow');
+    expect(mediumRisk.rationale).toContain('medium_risk_parent_notification_profile_default');
+
+    const highRisk = resolveDecisionEnvelope({
+      policyVersion: 'v2',
+      chat: { id: 999, type: 'private' },
+      fromId: 999,
+      family: familyWithLegacyChild,
+      intent: { isMentioned: false },
+      familyGroupChatId: 888,
+      safetySignal: { riskLevel: 'high' },
+      profilePolicies: {
+        teen: {
+          highRiskParentNotificationDefault: true,
+          highRiskEscalationPolicyId: 'teen_escalation',
+        },
+      },
+    });
+
+    expect(highRisk.action).toBe('requires_parent_approval');
+    expect(highRisk.safetyPlan.escalationPolicyId).toBe('teen_escalation');
+    expect(highRisk.rationale).toContain('high_risk_parent_notification_profile_default');
+    expect(highRisk.rationale).toContain('high_risk_escalation_policy_profile_default');
+  });
+
   it('allows profile override to disable medium-risk parent notification', () => {
     const envelope = resolveDecisionEnvelope({
       policyVersion: 'v1',

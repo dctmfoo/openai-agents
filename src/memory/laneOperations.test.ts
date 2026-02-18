@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -78,6 +78,43 @@ describe('laneOperations', () => {
 
     expect(await readFile(longTermPath, 'utf8')).toContain('Kid likes astronomy');
     expect(await readFile(dailyRecentPath, 'utf8')).toContain('Recent note');
+  });
+
+  it('moves all files from one retention run into a single trash directory', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'lane-ops-retention-trash-'));
+    const laneId = 'child_private:kid';
+
+    await appendLaneDailyNotesUnique(
+      { rootDir, laneId },
+      ['Old note 1'],
+      new Date('2026-02-01T10:00:00.000Z'),
+    );
+    await appendLaneDailyNotesUnique(
+      { rootDir, laneId },
+      ['Old note 2'],
+      new Date('2026-02-02T10:00:00.000Z'),
+    );
+
+    const summary = await runLaneRetention({
+      rootDir,
+      laneId,
+      retentionDays: 1,
+      now: new Date('2026-02-18T10:00:00.000Z'),
+    });
+
+    expect(summary.deletedFiles).toEqual(['2026-02-01.md', '2026-02-02.md']);
+
+    const trashRoot = path.join(rootDir, 'memory', 'trash', 'lanes');
+    const trashDirs = (await readdir(trashRoot, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+
+    expect(trashDirs).toHaveLength(1);
+
+    const trashDirPath = path.join(trashRoot, trashDirs[0] ?? '');
+    const movedFiles = (await readdir(trashDirPath)).sort();
+    expect(movedFiles).toEqual(['2026-02-01.md', '2026-02-02.md']);
   });
 
   it('moves lane memory into recoverable trash on delete', async () => {

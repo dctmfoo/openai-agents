@@ -674,6 +674,10 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
   });
 
   let familyConfigPromise: Promise<FamilyConfig> | null = null;
+  const invalidateFamilyConfigCache = () => {
+    familyConfigPromise = null;
+  };
+
   const getFamilyConfig = async () => {
     if (!familyConfigPromise) {
       familyConfigPromise = loadFamilyConfigImpl({ haloHome });
@@ -1289,6 +1293,7 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
       );
 
       if (onboardingCommand.handled) {
+        invalidateFamilyConfigCache();
         if (onboardingCommand.reply) {
           await ctx.reply(onboardingCommand.reply);
         }

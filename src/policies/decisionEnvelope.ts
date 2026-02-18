@@ -524,9 +524,8 @@ const resolveMediumRiskParentNotification = (
     };
   }
 
-  const profileDefault = member.profileId
-    ? input.profilePolicies?.[member.profileId]?.mediumRiskParentNotificationDefault
-    : undefined;
+  const profileId = profileIdForMember(member);
+  const profileDefault = input.profilePolicies?.[profileId]?.mediumRiskParentNotificationDefault;
 
   if (profileDefault !== undefined) {
     return {
@@ -548,9 +547,8 @@ const resolveHighRiskParentNotification = (
   notifyParent: boolean;
   reason: 'profile_default' | 'default';
 } => {
-  const profileDefault = member.profileId
-    ? input.profilePolicies?.[member.profileId]?.highRiskParentNotificationDefault
-    : undefined;
+  const profileId = profileIdForMember(member);
+  const profileDefault = input.profilePolicies?.[profileId]?.highRiskParentNotificationDefault;
 
   if (profileDefault !== undefined) {
     return {
@@ -573,9 +571,8 @@ const resolveHighRiskEscalationPolicy = (
   escalationPolicyId: string;
   reason: 'profile_default' | 'default';
 } => {
-  const profileDefault = member.profileId
-    ? input.profilePolicies?.[member.profileId]?.highRiskEscalationPolicyId
-    : undefined;
+  const profileId = profileIdForMember(member);
+  const profileDefault = input.profilePolicies?.[profileId]?.highRiskEscalationPolicyId;
 
   if (profileDefault !== undefined) {
     return {

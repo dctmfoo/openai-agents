@@ -181,6 +181,12 @@ export async function runLaneRetention(input: {
   const keptFiles: string[] = [];
 
   const maxAgeMs = retentionDays * 24 * 60 * 60 * 1000;
+  const trashBase = join(
+    laneTrashRoot(input.rootDir),
+    `${isoTimestampKey(now)}-retention-${hashSessionId(input.laneId)}`,
+  );
+  let trashDir: string | null = null;
+
   for (const filename of dailyFiles) {
     const ageMs = dailyFileAgeMs(filename, now);
     if (ageMs === null) {
@@ -200,12 +206,11 @@ export async function runLaneRetention(input: {
       continue;
     }
 
-    const trashBase = join(
-      laneTrashRoot(input.rootDir),
-      `${isoTimestampKey(now)}-retention-${hashSessionId(input.laneId)}`,
-    );
-    const trashDir = await resolveUniqueTrashPath(trashBase);
-    await mkdir(trashDir, { recursive: true });
+    if (!trashDir) {
+      trashDir = await resolveUniqueTrashPath(trashBase);
+      await mkdir(trashDir, { recursive: true });
+    }
+
     await rename(join(sourceDir, filename), join(trashDir, filename));
   }
 

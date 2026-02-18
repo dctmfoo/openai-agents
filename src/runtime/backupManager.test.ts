@@ -65,4 +65,79 @@ describe('backupManager', () => {
       message: 'backup_manifest_missing',
     });
   });
+
+  it('rejects backup identifiers with traversal separators', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'halo-backup-'));
+
+    await expect(
+      createRuntimeBackup({
+        rootDir,
+        backupId: '../escape',
+      }),
+    ).rejects.toThrow('backupId');
+
+    await expect(
+      restoreRuntimeBackup({
+        rootDir,
+        backupId: '../escape',
+      }),
+    ).rejects.toThrow('backupId');
+  });
+
+  it('rejects include and restore paths that attempt traversal', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'halo-backup-'));
+    await mkdir(path.join(rootDir, 'config'), { recursive: true });
+    await writeFile(path.join(rootDir, 'config', 'family.json'), '{"version":1}\n', 'utf8');
+
+    await expect(
+      createRuntimeBackup({
+        rootDir,
+        backupId: 'backup-safe',
+        includePaths: ['../../etc'],
+      }),
+    ).rejects.toThrow('includePaths entry');
+
+    await createRuntimeBackup({
+      rootDir,
+      backupId: 'backup-safe',
+    });
+
+    await expect(
+      restoreRuntimeBackup({
+        rootDir,
+        backupId: 'backup-safe',
+        restorePaths: ['../../etc'],
+      }),
+    ).rejects.toThrow('restorePaths entry');
+  });
+
+  it('rejects tampered manifest paths during restore', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'halo-backup-'));
+    await mkdir(path.join(rootDir, 'config'), { recursive: true });
+    await writeFile(path.join(rootDir, 'config', 'family.json'), '{"version":1}\n', 'utf8');
+
+    const backup = await createRuntimeBackup({
+      rootDir,
+      backupId: 'backup-manifest-check',
+    });
+
+    const manifest = JSON.parse(await readFile(backup.manifestPath, 'utf8')) as {
+      schemaVersion: number;
+      backupId: string;
+      createdAtMs: number;
+      includedPaths: string[];
+      fileCount: number;
+      totalBytes: number;
+    };
+
+    manifest.includedPaths = ['../../etc'];
+    await writeFile(backup.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+
+    await expect(
+      restoreRuntimeBackup({
+        rootDir,
+        backupId: 'backup-manifest-check',
+      }),
+    ).rejects.toThrow('manifest included path');
+  });
 });

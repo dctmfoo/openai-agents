@@ -56,13 +56,63 @@ type RestoreRuntimeBackupOptions = {
   reportIncident?: BackupIncidentReporter;
 };
 
-function normalizeBackupId(value: string | undefined, now: Date): string {
-  const trimmed = value?.trim() ?? '';
-  if (trimmed) {
-    return trimmed;
+function sanitizeBackupId(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error('backupId must not be empty.');
   }
 
-  return `backup-${now.toISOString().replace(/[:.]/g, '-')}`;
+  if (/[\\/]/.test(trimmed) || trimmed.includes('..')) {
+    throw new Error('backupId must not contain path separators or traversal segments.');
+  }
+
+  return trimmed;
+}
+
+function normalizeRuntimeRelativePath(value: string, fieldName: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(`${fieldName} must not be empty.`);
+  }
+
+  const normalizedSlashes = trimmed.replace(/\\/g, '/');
+  if (normalizedSlashes.startsWith('/')) {
+    throw new Error(`${fieldName} must be a relative path.`);
+  }
+
+  if (/^[A-Za-z]:/.test(normalizedSlashes)) {
+    throw new Error(`${fieldName} must be a relative path.`);
+  }
+
+  const segments = normalizedSlashes.split('/').filter(Boolean);
+  if (segments.length === 0) {
+    throw new Error(`${fieldName} must not be empty.`);
+  }
+
+  if (segments.some((segment) => segment === '.' || segment === '..')) {
+    throw new Error(`${fieldName} must not contain path traversal segments.`);
+  }
+
+  return segments.join('/');
+}
+
+function normalizeRuntimeRelativePathList(values: string[], fieldName: string): string[] {
+  const unique = new Set<string>();
+
+  for (const value of values) {
+    unique.add(normalizeRuntimeRelativePath(value, fieldName));
+  }
+
+  return Array.from(unique).sort();
+}
+
+function normalizeBackupId(value: string | undefined, now: Date): string {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) {
+    return `backup-${now.toISOString().replace(/[:.]/g, '-')}`;
+  }
+
+  return sanitizeBackupId(trimmed);
 }
 
 function backupRootDir(rootDir: string, backupId: string): string {
@@ -79,18 +129,7 @@ function backupManifestPath(rootDir: string, backupId: string): string {
 
 function normalizeIncludedPaths(includePaths?: string[]): string[] {
   const source = includePaths && includePaths.length > 0 ? includePaths : [...DEFAULT_BACKUP_PATHS];
-  const unique = new Set<string>();
-
-  for (const candidate of source) {
-    const trimmed = candidate.trim();
-    if (!trimmed) {
-      continue;
-    }
-
-    unique.add(trimmed);
-  }
-
-  return Array.from(unique).sort();
+  return normalizeRuntimeRelativePathList(source, 'includePaths entry');
 }
 
 async function collectSnapshotStats(snapshotPath: string): Promise<{ fileCount: number; totalBytes: number }> {
@@ -228,7 +267,7 @@ export async function createRuntimeBackup(
 export async function restoreRuntimeBackup(
   options: RestoreRuntimeBackupOptions,
 ): Promise<RuntimeRestoreResult> {
-  const backupId = options.backupId.trim();
+  const backupId = sanitizeBackupId(options.backupId);
   const reporter = createIncidentReporter(options.rootDir, options.reportIncident);
 
   const snapshotDir = backupSnapshotDir(options.rootDir, backupId);
@@ -253,9 +292,18 @@ export async function restoreRuntimeBackup(
     const raw = await readFile(manifestPath, 'utf8');
     const manifest = JSON.parse(raw) as BackupManifest;
 
+    if (!Array.isArray(manifest.includedPaths)) {
+      throw new Error('Backup manifest is invalid: includedPaths must be an array.');
+    }
+
+    const manifestIncludedPaths = normalizeRuntimeRelativePathList(
+      manifest.includedPaths,
+      'manifest included path',
+    );
+
     const selectedPaths = options.restorePaths && options.restorePaths.length > 0
-      ? Array.from(new Set(options.restorePaths.map((value) => value.trim()).filter(Boolean))).sort()
-      : manifest.includedPaths;
+      ? normalizeRuntimeRelativePathList(options.restorePaths, 'restorePaths entry')
+      : manifestIncludedPaths;
 
     const restoredPaths: string[] = [];
 
