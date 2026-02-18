@@ -1459,6 +1459,7 @@ describe('gateway status handler', () => {
       {
         method: 'GET',
         url: `/memory/lanes/${encodeURIComponent(laneId)}/export?memberId=parent-1`,
+        socket: { remoteAddress: '127.0.0.1' },
       },
       res,
     );
@@ -1495,6 +1496,7 @@ describe('gateway status handler', () => {
       {
         method: 'GET',
         url: `/memory/lanes/${encodeURIComponent(laneId)}/export?memberId=parent-2`,
+        socket: { remoteAddress: '127.0.0.1' },
       },
       res,
     );
@@ -1503,6 +1505,85 @@ describe('gateway status handler', () => {
     expect(JSON.parse(res.body)).toEqual({
       error: 'operations_forbidden',
       reason: 'parent_not_manager',
+    });
+  });
+
+  it('blocks lane export for non-loopback requests', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    await writeControlPlaneFamilyConfig(haloHome);
+    const laneId = 'child_private:child-1';
+
+    const store = await makeSessionStore(haloHome);
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+    });
+
+    const res = makeMockResponse();
+    await handler(
+      {
+        method: 'GET',
+        url: `/memory/lanes/${encodeURIComponent(laneId)}/export?memberId=parent-1`,
+        socket: { remoteAddress: '10.0.0.1' },
+      },
+      res,
+    );
+
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body)).toEqual({ error: 'forbidden' });
+  });
+
+  it('returns 405 with Allow header for unsupported lane memory methods', async () => {
+    const haloHome = await mkdtemp(path.join(os.tmpdir(), 'halo-home-'));
+    await writeControlPlaneFamilyConfig(haloHome);
+    const laneId = 'child_private:child-1';
+
+    const store = await makeSessionStore(haloHome);
+    const handler = createStatusHandler({
+      startedAtMs: 0,
+      host: '127.0.0.1',
+      port: 7777,
+      version: null,
+      haloHome: buildHaloHomePaths(haloHome),
+      sessionStore: store,
+    });
+
+    const exportRes = makeMockResponse();
+    await handler(
+      {
+        method: 'POST',
+        url: `/memory/lanes/${encodeURIComponent(laneId)}/export?memberId=parent-1`,
+        socket: { remoteAddress: '127.0.0.1' },
+      },
+      exportRes,
+    );
+
+    expect(exportRes.statusCode).toBe(405);
+    expect(exportRes.headers.allow).toBe('GET');
+    expect(JSON.parse(exportRes.body)).toEqual({
+      error: 'method_not_allowed',
+      allowed: ['GET'],
+    });
+
+    const deleteRes = makeMockResponse();
+    await handler(
+      {
+        method: 'GET',
+        url: `/memory/lanes/${encodeURIComponent(laneId)}/delete?memberId=parent-1`,
+        socket: { remoteAddress: '127.0.0.1' },
+      },
+      deleteRes,
+    );
+
+    expect(deleteRes.statusCode).toBe(405);
+    expect(deleteRes.headers.allow).toBe('POST');
+    expect(JSON.parse(deleteRes.body)).toEqual({
+      error: 'method_not_allowed',
+      allowed: ['POST'],
     });
   });
 

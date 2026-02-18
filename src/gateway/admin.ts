@@ -303,6 +303,14 @@ const laneActionFromRouteKind = (
   }
 };
 
+const laneMethodFromRouteKind = (kind: LaneMemoryRoute['kind']): 'GET' | 'POST' => {
+  if (kind === 'export') {
+    return 'GET';
+  }
+
+  return 'POST';
+};
+
 type BackupOperationsRoute =
   | { kind: 'create' }
   | { kind: 'restore' };
@@ -773,6 +781,21 @@ export function createStatusHandler(context: StatusContext): StatusHandler {
 
       const laneMemoryRoute = matchLaneMemoryRoute(path);
       if (laneMemoryRoute) {
+        const allowedMethod = laneMethodFromRouteKind(laneMemoryRoute.kind);
+        if (req.method !== allowedMethod) {
+          res.setHeader('allow', allowedMethod);
+          sendJson(405, {
+            error: 'method_not_allowed',
+            allowed: [allowedMethod],
+          });
+          return;
+        }
+
+        if (!isLoopbackAddress(req.socket?.remoteAddress)) {
+          sendJson(403, { error: 'forbidden' });
+          return;
+        }
+
         const url = new URL(req.url ?? '', 'http://localhost');
         const actorResolution = await resolveOperationsActor(
           context,
@@ -798,7 +821,7 @@ export function createStatusHandler(context: StatusContext): StatusHandler {
 
         const actor = actorResolution.actor;
 
-        if (laneMemoryRoute.kind === 'export' && req.method === 'GET') {
+        if (laneMemoryRoute.kind === 'export') {
           const exported = await exportLaneMemory({
             rootDir: context.haloHome.root,
             laneId: laneMemoryRoute.laneId,
@@ -818,12 +841,7 @@ export function createStatusHandler(context: StatusContext): StatusHandler {
           return;
         }
 
-        if (laneMemoryRoute.kind === 'delete' && req.method === 'POST') {
-          if (!isLoopbackAddress(req.socket?.remoteAddress)) {
-            sendJson(403, { error: 'forbidden' });
-            return;
-          }
-
+        if (laneMemoryRoute.kind === 'delete') {
           const deleted = await deleteLaneMemory({
             rootDir: context.haloHome.root,
             laneId: laneMemoryRoute.laneId,
@@ -844,61 +862,54 @@ export function createStatusHandler(context: StatusContext): StatusHandler {
           return;
         }
 
-        if (laneMemoryRoute.kind === 'retention' && req.method === 'POST') {
-          if (!isLoopbackAddress(req.socket?.remoteAddress)) {
-            sendJson(403, { error: 'forbidden' });
-            return;
-          }
+        const overrideDaysRaw = url.searchParams.get('retentionDays');
+        const overrideDays =
+          overrideDaysRaw === null
+            ? null
+            : Number.parseInt(overrideDaysRaw, 10);
 
-          const overrideDaysRaw = url.searchParams.get('retentionDays');
-          const overrideDays =
-            overrideDaysRaw === null
-              ? null
-              : Number.parseInt(overrideDaysRaw, 10);
+        const configuredDays = resolveLaneRetentionDays(
+          actor.family,
+          laneMemoryRoute.laneId,
+        );
 
-          const configuredDays = resolveLaneRetentionDays(
-            actor.family,
-            laneMemoryRoute.laneId,
-          );
+        const retentionDays =
+          overrideDays !== null && Number.isFinite(overrideDays)
+            ? overrideDays
+            : configuredDays;
 
-          const retentionDays =
-            overrideDays !== null && Number.isFinite(overrideDays)
-              ? overrideDays
-              : configuredDays;
-
-          if (!retentionDays || retentionDays <= 0) {
-            sendJson(409, {
-              error: 'lane_retention_policy_missing',
-            });
-            return;
-          }
-
-          const dryRun = parseBooleanQuery(url.searchParams.get('dryRun'), false);
-          const now = parseDateQuery(url.searchParams.get('now'));
-
-          const summary = await runLaneRetention({
-            rootDir: context.haloHome.root,
-            laneId: laneMemoryRoute.laneId,
-            retentionDays,
-            dryRun,
-            now,
+        if (!retentionDays || retentionDays <= 0) {
+          sendJson(409, {
+            error: 'lane_retention_policy_missing',
           });
-
-          await writeOperationalAudit(context, {
-            action: 'lane_retention',
-            actorMemberId: actor.memberId,
-            targetLaneId: laneMemoryRoute.laneId,
-            outcome: 'allowed',
-            details: {
-              retentionDays,
-              dryRun,
-              deletedCount: summary.deletedFiles.length,
-            },
-          });
-
-          sendJson(200, summary);
           return;
         }
+
+        const dryRun = parseBooleanQuery(url.searchParams.get('dryRun'), false);
+        const now = parseDateQuery(url.searchParams.get('now'));
+
+        const summary = await runLaneRetention({
+          rootDir: context.haloHome.root,
+          laneId: laneMemoryRoute.laneId,
+          retentionDays,
+          dryRun,
+          now,
+        });
+
+        await writeOperationalAudit(context, {
+          action: 'lane_retention',
+          actorMemberId: actor.memberId,
+          targetLaneId: laneMemoryRoute.laneId,
+          outcome: 'allowed',
+          details: {
+            retentionDays,
+            dryRun,
+            deletedCount: summary.deletedFiles.length,
+          },
+        });
+
+        sendJson(200, summary);
+        return;
       }
 
       const sessionFileRoute = matchSessionFileRoute(path);
