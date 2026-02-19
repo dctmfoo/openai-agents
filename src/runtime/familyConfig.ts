@@ -253,7 +253,7 @@ export type FamilyConfig = Omit<FamilyConfigSchema, 'onboarding'> & {
   onboarding?: OnboardingContract;
 };
 
-export type FamilyConfigLoadOptions = {
+type FamilyConfigLoadOptions = {
   env?: NodeJS.ProcessEnv;
   haloHome?: string;
 };

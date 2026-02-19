@@ -15,7 +15,7 @@ type RunDistillationOptions = {
 
 export type DistillationMode = 'deterministic' | 'llm';
 
-export type RunDistillationWithModeOptions = RunDistillationOptions & {
+type RunDistillationWithModeOptions = RunDistillationOptions & {
   mode?: DistillationMode;
 };
 

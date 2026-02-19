@@ -73,7 +73,7 @@ export type DecisionEnvelope = {
   rationale: string[];
 };
 
-export type DecisionEnvelopeInput = {
+type DecisionEnvelopeInput = {
   policyVersion: string;
   family: FamilyConfig;
   chat: {

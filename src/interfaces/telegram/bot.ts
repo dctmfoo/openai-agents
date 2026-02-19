@@ -132,7 +132,7 @@ type TelegramAdapterDeps = {
   acceptOnboardingInvite: typeof acceptOnboardingInvite;
 };
 
-export type TelegramAdapterOptions = {
+type TelegramAdapterOptions = {
   token: string;
   logDir?: string;
   rootDir?: string;
@@ -145,7 +145,7 @@ export type TelegramAdapterOptions = {
   deps?: Partial<TelegramAdapterDeps>;
 };
 
-export type TelegramAdapter = {
+type TelegramAdapter = {
   bot: TelegramBotLike;
   start: () => Promise<void>;
 };

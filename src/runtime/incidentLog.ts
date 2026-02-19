@@ -12,7 +12,7 @@ export type OperationalAction =
 
 export type IncidentEventAction = OperationalAction;
 
-export type IncidentEventInput = {
+type IncidentEventInput = {
   rootDir: string;
   action: IncidentEventAction;
   severity: IncidentSeverity;

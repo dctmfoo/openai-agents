@@ -14,7 +14,7 @@ type BuildScopeCitationPolicyInput = {
   allowedScopeIds: string[];
 };
 
-export type ScopeCitationPolicy = {
+type ScopeCitationPolicy = {
   disallowedFilenames: string[];
 };
 

@@ -32,7 +32,7 @@ import type {
   FileMemoryRetentionStatusSnapshot,
 } from '../files/fileMemoryRetentionScheduler.js';
 
-export type HaloHomePaths = {
+type HaloHomePaths = {
   root: string;
   config: string;
   docs: string;
@@ -124,7 +124,7 @@ type PolicyStatusPayload = {
   scopes: PolicyScopeStatus[];
 };
 
-export type StatusContext = {
+type StatusContext = {
   startedAtMs: number;
   host: string;
   port: number;
@@ -138,7 +138,7 @@ export type StatusContext = {
   now?: () => number;
 };
 
-export type StatusHandler = (
+type StatusHandler = (
   req: {
     method?: string;
     url?: string;
@@ -418,7 +418,7 @@ const readTranscript = async (path: string) => {
   }
 };
 
-export type AdminServerOptions = {
+type AdminServerOptions = {
   host: string;
   port: number;
   haloHome: string;
@@ -432,7 +432,7 @@ export type AdminServerOptions = {
   now?: () => number;
 };
 
-export type AdminServer = {
+type AdminServer = {
   server: Server;
   handler: StatusHandler;
   context: StatusContext;

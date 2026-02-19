@@ -14,7 +14,7 @@ export type TelegramPolicyIntent = {
   command?: string;
 };
 
-export type TelegramPolicyInput = {
+type TelegramPolicyInput = {
   chat: TelegramChat;
   fromId?: number | string;
   family: FamilyConfig;

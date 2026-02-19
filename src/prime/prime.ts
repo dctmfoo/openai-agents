@@ -10,7 +10,7 @@ import { TOOL_NAMES, type ToolName } from '../tools/toolNames.js';
 import { filterResponse } from '../policies/contentFilter.js';
 import type { PrimeContext } from './types.js';
 
-export type PrimeRunOptions = {
+type PrimeRunOptions = {
   /** Stable identifier for the current speaker (Telegram user id, etc.) */
   userId?: string;
   /** Stable identifier for the conversation scope (e.g. Telegram chat id). */
@@ -234,7 +234,7 @@ async function applyFileCitationPolicy(
   return applied.output;
 }
 
-export type PrimeInput = string | AgentInputItem[];
+type PrimeInput = string | AgentInputItem[];
 
 export async function runPrime(input: PrimeInput, opts: PrimeRunOptions = {}) {
   const scopeId = opts.scopeId ?? `default:${opts.channel ?? 'unknown'}:${opts.userId ?? 'unknown'}`;

@@ -8,7 +8,7 @@ import {
 } from '../memory/laneTopology.js';
 import { hashSessionId } from '../sessions/sessionHash.js';
 
-export type ScopeFileRegistryPaths = {
+type ScopeFileRegistryPaths = {
   rootDir: string;
   scopeId: string;
 };

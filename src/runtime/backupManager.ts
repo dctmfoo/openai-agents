@@ -17,7 +17,7 @@ type BackupManifest = {
   totalBytes: number;
 };
 
-export type RuntimeBackupResult = {
+type RuntimeBackupResult = {
   backupId: string;
   backupDir: string;
   manifestPath: string;
@@ -26,7 +26,7 @@ export type RuntimeBackupResult = {
   totalBytes: number;
 };
 
-export type RuntimeRestoreResult = {
+type RuntimeRestoreResult = {
   backupId: string;
   manifestPath: string;
   restoredPaths: string[];

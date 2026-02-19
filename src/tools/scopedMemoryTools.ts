@@ -17,13 +17,13 @@ import { existsSync } from 'node:fs';
 
 type ScopedMemoryTarget = 'long_term' | 'today' | 'yesterday';
 
-export type ReadScopedMemoryResult = {
+type ReadScopedMemoryResult = {
   target: ScopedMemoryTarget;
   path: string;
   contents: string;
 };
 
-export type ReadScopedMemoryInput = {
+type ReadScopedMemoryInput = {
   rootDir: string;
   scopeId: string;
   target: ScopedMemoryTarget;

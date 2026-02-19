@@ -24,7 +24,7 @@ type SearchStore = {
   markAccess: (chunkIdxs: number[]) => void;
 };
 
-export type SearchRequest = {
+type SearchRequest = {
   query: string;
   embedding: number[];
   topK: number;

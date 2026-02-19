@@ -1,14 +1,5 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": [
-    "src/interfaces/telegram/start.ts",
-    "src/interfaces/cli/run.ts",
-    "src/gateway/start.ts",
-    "src/dev/todoCheck.ts",
-    "src/dev/configInit.ts",
-    "src/dev/configValidate.ts",
-    "src/dev/doctor.ts"
-  ],
   "project": [
     "src/**/*.ts",
     "!dist/**",

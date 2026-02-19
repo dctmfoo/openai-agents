@@ -72,33 +72,33 @@ const RELINK_MEMBER_INPUT_SCHEMA = z
   })
   .strict();
 
-export type BootstrapParentOnboardingInput = z.infer<typeof BOOTSTRAP_INPUT_SCHEMA>;
-export type IssueOnboardingInviteInput = z.infer<typeof ISSUE_INVITE_INPUT_SCHEMA>;
-export type AcceptOnboardingInviteInput = z.infer<typeof ACCEPT_INVITE_INPUT_SCHEMA>;
-export type RevokeOnboardingInviteInput = z.infer<typeof REVOKE_INVITE_INPUT_SCHEMA>;
-export type RelinkOnboardingMemberInput = z.infer<typeof RELINK_MEMBER_INPUT_SCHEMA>;
+type BootstrapParentOnboardingInput = z.infer<typeof BOOTSTRAP_INPUT_SCHEMA>;
+type IssueOnboardingInviteInput = z.infer<typeof ISSUE_INVITE_INPUT_SCHEMA>;
+type AcceptOnboardingInviteInput = z.infer<typeof ACCEPT_INVITE_INPUT_SCHEMA>;
+type RevokeOnboardingInviteInput = z.infer<typeof REVOKE_INVITE_INPUT_SCHEMA>;
+type RelinkOnboardingMemberInput = z.infer<typeof RELINK_MEMBER_INPUT_SCHEMA>;
 
-export type BootstrapParentOnboardingResult = {
+type BootstrapParentOnboardingResult = {
   outcome: 'bootstrapped' | 'already_bootstrapped';
   onboarding: OnboardingContract;
 };
 
-export type IssueOnboardingInviteResult = {
+type IssueOnboardingInviteResult = {
   outcome: 'issued' | 'already_issued';
   onboarding: OnboardingContract;
 };
 
-export type AcceptOnboardingInviteResult = {
+type AcceptOnboardingInviteResult = {
   outcome: 'joined' | 'already_joined' | 'duplicate_join';
   onboarding: OnboardingContract;
 };
 
-export type RevokeOnboardingInviteResult = {
+type RevokeOnboardingInviteResult = {
   outcome: 'revoked' | 'already_revoked' | 'not_revocable';
   onboarding: OnboardingContract;
 };
 
-export type RelinkOnboardingMemberResult = {
+type RelinkOnboardingMemberResult = {
   outcome: 'relinked' | 'already_relinked' | 'duplicate_join';
   onboarding: OnboardingContract;
 };
