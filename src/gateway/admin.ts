@@ -7,6 +7,7 @@ import {
   resolveLaneRetentionDays,
 } from '../runtime/operationsPolicy.js';
 import { appendOperationalAuditEvent } from '../runtime/operationsAudit.js';
+import type { OperationalAction } from '../runtime/incidentLog.js';
 import {
   createRuntimeBackup,
   restoreRuntimeBackup,
@@ -537,12 +538,7 @@ async function resolveOperationsActor(
 async function writeOperationalAudit(
   context: StatusContext,
   input: {
-    action:
-      | 'lane_export'
-      | 'lane_delete'
-      | 'lane_retention'
-      | 'backup_create'
-      | 'backup_restore';
+    action: OperationalAction;
     actorMemberId: string;
     targetLaneId?: string;
     targetBackupId?: string;

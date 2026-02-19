@@ -440,6 +440,33 @@ const resolveScopeStep = (
   };
 };
 
+const resolveConfigModelPlan = (
+  family: FamilyConfig,
+  member: FamilyConfig['members'][number],
+): DecisionEnvelope['modelPlan'] | null => {
+  const profiles = family.controlPlane?.profiles;
+  if (!profiles || profiles.length === 0) {
+    return null;
+  }
+
+  const profileId = profileIdForMember(member);
+  const profile = profiles.find((p) => p.profileId === profileId);
+  if (!profile) {
+    return null;
+  }
+
+  const modelPolicy = family.controlPlane?.modelPolicies?.[profile.modelPolicyId];
+  if (!modelPolicy) {
+    return null;
+  }
+
+  return {
+    tier: modelPolicy.tier,
+    model: modelPolicy.model,
+    reason: modelPolicy.reason,
+  };
+};
+
 const resolveRoleProfileStep = (
   family: FamilyConfig,
   member: FamilyConfig['members'][number],
@@ -453,15 +480,16 @@ const resolveRoleProfileStep = (
     const isParent = member.role === 'parent';
     const modelTier = isParent ? 'parent_default' : 'child_default';
     const escalationPolicyId = isParent ? 'none' : 'minor_default';
+    const configModelPlan = resolveConfigModelPlan(family, member);
 
     return {
       action: 'allow',
       allowedCapabilities: ['chat.respond'],
       allowedMemoryReadLanes: lanes.read,
       allowedMemoryWriteLanes: lanes.write,
-      modelPlan: {
+      modelPlan: configModelPlan ?? {
         tier: modelTier,
-        model: 'gpt-5.1',
+        model: 'gpt-4.1',
         reason: 'dm_default',
       },
       safetyPlan: {
@@ -473,14 +501,16 @@ const resolveRoleProfileStep = (
   }
 
   if (scopeType === 'parents_group') {
+    const configModelPlan = resolveConfigModelPlan(family, member);
+
     return {
       action: 'allow',
       allowedCapabilities: ['chat.respond.group_safe'],
       allowedMemoryReadLanes: ['parents_shared'],
       allowedMemoryWriteLanes: ['parents_shared'],
-      modelPlan: {
+      modelPlan: configModelPlan ?? {
         tier: 'parent_group_safe',
-        model: 'gpt-5.1-mini',
+        model: 'gpt-4.1-mini',
         reason: 'parents_group_parent_allow',
       },
       safetyPlan: {
@@ -491,14 +521,16 @@ const resolveRoleProfileStep = (
     };
   }
 
+  const configModelPlan = resolveConfigModelPlan(family, member);
+
   return {
     action: 'allow',
     allowedCapabilities: ['chat.respond.group_safe'],
     allowedMemoryReadLanes: ['family_shared'],
     allowedMemoryWriteLanes: ['family_shared'],
-    modelPlan: {
+    modelPlan: configModelPlan ?? {
       tier: 'group_safe',
-      model: 'gpt-5.1-mini',
+      model: 'gpt-4.1-mini',
       reason: 'family_group_mentioned',
     },
     safetyPlan: {

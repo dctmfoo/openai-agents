@@ -5,7 +5,7 @@ import { type AgentInputItem } from '@openai/agents';
 import { Bot } from 'grammy';
 import OpenAI, { toFile } from 'openai';
 import { runPrime } from '../../prime/prime.js';
-import { appendScopedDailyNote } from '../../memory/scopedMemory.js';
+import { appendLaneDailyNotesUnique } from '../../memory/laneMemory.js';
 import { loadFamilyConfig, type FamilyConfig } from '../../runtime/familyConfig.js';
 import {
   acceptOnboardingInvite,
@@ -101,7 +101,7 @@ type VoiceTranscriptionInput = {
 
 type TelegramAdapterDeps = {
   runPrime: typeof runPrime;
-  appendScopedDailyNote: typeof appendScopedDailyNote;
+  appendLaneDailyNotesUnique: typeof appendLaneDailyNotesUnique;
   appendJsonl: typeof appendJsonl;
   loadFamilyConfig: typeof loadFamilyConfig;
   getScopeVectorStoreId: typeof getScopeVectorStoreId;
@@ -608,6 +608,18 @@ function toPrimeScopeType(
   return undefined;
 }
 
+export function resolveFamilyGroupChatId(config: FamilyConfig): number | null {
+  const familyGroupScope = config.controlPlane?.scopes.find(
+    (scope) => scope.scopeType === 'family_group',
+  );
+
+  if (!familyGroupScope) {
+    return null;
+  }
+
+  return familyGroupScope.telegramChatId ?? null;
+}
+
 export function createTelegramAdapter(options: TelegramAdapterOptions): TelegramAdapter {
   const {
     token,
@@ -630,7 +642,7 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
 
   const {
     runPrime: runPrimeImpl,
-    appendScopedDailyNote: appendScopedDailyNoteImpl,
+    appendLaneDailyNotesUnique: appendLaneDailyNotesUniqueImpl,
     appendJsonl: appendJsonlImpl,
     loadFamilyConfig: loadFamilyConfigImpl,
     getScopeVectorStoreId: getScopeVectorStoreIdImpl,
@@ -643,7 +655,7 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
     acceptOnboardingInvite: acceptOnboardingInviteImpl,
   } = {
     runPrime,
-    appendScopedDailyNote,
+    appendLaneDailyNotesUnique,
     appendJsonl,
     loadFamilyConfig,
     getScopeVectorStoreId,
@@ -655,6 +667,12 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
     issueOnboardingInvite,
     acceptOnboardingInvite,
     ...deps,
+  };
+
+  const writeLaneDailyNotes = async (writeLanes: string[], note: string): Promise<void> => {
+    for (const laneId of writeLanes) {
+      await appendLaneDailyNotesUniqueImpl({ rootDir, laneId }, [note]);
+    }
   };
 
   const logPath = `${logDir}/events.jsonl`;
@@ -737,6 +755,7 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
         fromId: ctx.from?.id,
         family: familyConfig,
         intent,
+        familyGroupChatId: resolveFamilyGroupChatId(familyConfig),
       });
     } catch (err) {
       await writeLog({
@@ -1147,6 +1166,7 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
         role: policy.role,
         ageGroup: policy.ageGroup,
         scopeType: toPrimeScopeType(policy.scopeType),
+        model: policy.modelPlan.model,
         fileSearchEnabled: false,
         contextMode: 'light',
         disabledToolNames: [...TELEGRAM_VISION_DISABLED_TOOLS],
@@ -1159,11 +1179,11 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
 
       const rawCaption = input.caption?.trim();
       const captionNote = rawCaption && rawCaption.length > 0 ? rawCaption : '(no caption)';
-      await appendScopedDailyNoteImpl(
-        { rootDir, scopeId },
+      await writeLaneDailyNotes(
+        policy.allowedMemoryWriteLanes,
         `[user:image:${input.source}] ${captionNote} [file:${persisted.relativePath}]`,
       );
-      await appendScopedDailyNoteImpl({ rootDir, scopeId }, `[prime] ${finalOutput}`);
+      await writeLaneDailyNotes(policy.allowedMemoryWriteLanes, `[prime] ${finalOutput}`);
 
       await writeLog({
         ts: now().toISOString(),
@@ -1323,6 +1343,7 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
         role: policy.role,
         ageGroup: policy.ageGroup,
         scopeType: primeScopeType,
+        model: policy.modelPlan.model,
         fileSearchEnabled: fileSearchState.enabled,
         fileSearchVectorStoreId: fileSearchState.vectorStoreId,
         fileSearchIncludeResults: fileMemory.includeSearchResults,
@@ -1333,9 +1354,9 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
       });
       const finalOutput = String(result.finalOutput ?? '').trim() || '(no output)';
 
-      // Persist a lightweight transcript to the scoped daily memory file.
-      await appendScopedDailyNoteImpl({ rootDir, scopeId }, `[user] ${text}`);
-      await appendScopedDailyNoteImpl({ rootDir, scopeId }, `[prime] ${finalOutput}`);
+      // Persist a lightweight transcript to the lane daily memory files.
+      await writeLaneDailyNotes(policy.allowedMemoryWriteLanes, `[user] ${text}`);
+      await writeLaneDailyNotes(policy.allowedMemoryWriteLanes, `[prime] ${finalOutput}`);
 
       await writeLog({
         ts: now().toISOString(),
@@ -1505,6 +1526,7 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
         role: policy.role,
         ageGroup: policy.ageGroup,
         scopeType: primeScopeType,
+        model: policy.modelPlan.model,
         fileSearchEnabled: fileSearchState.enabled,
         fileSearchVectorStoreId: fileSearchState.vectorStoreId,
         fileSearchIncludeResults: fileMemory.includeSearchResults,
@@ -1516,8 +1538,8 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
 
       const finalOutput = String(result.finalOutput ?? '').trim() || '(no output)';
 
-      await appendScopedDailyNoteImpl({ rootDir, scopeId }, `[user:voice] ${transcript}`);
-      await appendScopedDailyNoteImpl({ rootDir, scopeId }, `[prime] ${finalOutput}`);
+      await writeLaneDailyNotes(policy.allowedMemoryWriteLanes, `[user:voice] ${transcript}`);
+      await writeLaneDailyNotes(policy.allowedMemoryWriteLanes, `[prime] ${finalOutput}`);
 
       await writeLog({
         ts: now().toISOString(),

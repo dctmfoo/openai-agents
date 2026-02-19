@@ -7,6 +7,7 @@ export type PrimeContext = ToolPolicyContext & {
   scopeId: string;
   channel?: 'telegram' | 'cli';
   ageGroup?: 'child' | 'teen' | 'young_adult';
+  model?: string;
   contextMode?: 'full' | 'light';
   fileSearchEnabled?: boolean;
   fileSearchVectorStoreId?: string;
@@ -16,4 +17,5 @@ export type PrimeContext = ToolPolicyContext & {
   toolsConfig?: ToolsConfig;
   allowedMemoryReadLanes?: string[];
   allowedMemoryReadScopes?: string[];
+  allowedMemoryWriteLanes?: string[];
 };

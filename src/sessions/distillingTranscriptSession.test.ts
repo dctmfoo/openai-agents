@@ -5,7 +5,7 @@ import path from 'node:path';
 
 import { SessionStore } from './sessionStore.js';
 import { TranscriptStore } from './transcriptStore.js';
-import { getScopedLongTermPath } from '../memory/scopedMemory.js';
+import { getLaneLongTermPath } from '../memory/laneMemory.js';
 import type {
   AgentInputItem,
   OpenAIResponsesCompactionAwareSession,
@@ -24,7 +24,7 @@ const userMessage = (text: string) =>
   }) satisfies AgentInputItem;
 
 describe('distillation trigger wiring', () => {
-  it('runs deterministic distillation and writes scoped MEMORY.md when enabled', async () => {
+  it('runs deterministic distillation and writes lane MEMORY.md when enabled', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'halo-distill-'));
 
     const store = new SessionStore({
@@ -45,7 +45,8 @@ describe('distillation trigger wiring', () => {
     // Wait a tiny bit for the async distillation chain to run.
     await new Promise((r) => setTimeout(r, 20));
 
-    const memPath = getScopedLongTermPath({ rootDir, scopeId });
+    // No family config -> falls back to system_audit lane
+    const memPath = getLaneLongTermPath({ rootDir, laneId: 'system_audit' });
     const content = await readFile(memPath, 'utf8');
     expect(content).toContain('I like black coffee');
   });

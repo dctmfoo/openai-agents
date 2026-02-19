@@ -2,10 +2,14 @@ import { tool, type RunContext } from '@openai/agents';
 import { z } from 'zod';
 
 import {
-  appendScopedDailyNote,
   getScopedDailyPath,
   getScopedLongTermPath,
 } from '../memory/scopedMemory.js';
+import {
+  appendLaneDailyNotesUnique,
+  getLaneDailyPath,
+  getLaneLongTermPath,
+} from '../memory/laneMemory.js';
 import type { PrimeContext } from '../prime/types.js';
 import { TOOL_NAMES } from './toolNames.js';
 import { readFile } from 'node:fs/promises';
@@ -23,6 +27,7 @@ export type ReadScopedMemoryInput = {
   rootDir: string;
   scopeId: string;
   target: ScopedMemoryTarget;
+  laneIds?: string[];
   now?: () => Date;
 };
 
@@ -35,6 +40,25 @@ export async function readScopedMemory(input: ReadScopedMemoryInput): Promise<Re
   const now = input.now ?? (() => new Date());
   const date = now();
   const yesterday = new Date(date.getTime() - 24 * 60 * 60 * 1000);
+
+  if (input.laneIds && input.laneIds.length > 0) {
+    const sections: string[] = [];
+    for (const laneId of input.laneIds) {
+      let lanePath: string;
+      if (input.target === 'long_term') {
+        lanePath = getLaneLongTermPath({ rootDir: input.rootDir, laneId });
+      } else if (input.target === 'yesterday') {
+        lanePath = getLaneDailyPath({ rootDir: input.rootDir, laneId }, yesterday);
+      } else {
+        lanePath = getLaneDailyPath({ rootDir: input.rootDir, laneId }, date);
+      }
+      const text = await safeRead(lanePath);
+      if (text) {
+        sections.push(`[lane:${laneId}]\n${text}`);
+      }
+    }
+    return { target: input.target, path: '', contents: sections.join('\n\n') };
+  }
 
   let path: string;
   if (input.target === 'long_term') {
@@ -79,6 +103,7 @@ export const readScopedMemoryTool = tool<typeof readScopedMemorySchema, PrimeCon
       rootDir: context.rootDir,
       scopeId: context.scopeId,
       target,
+      laneIds: context.allowedMemoryReadLanes,
     });
   },
 });
@@ -86,14 +111,19 @@ export const readScopedMemoryTool = tool<typeof readScopedMemorySchema, PrimeCon
 export const rememberDailyTool = tool<typeof rememberDailySchema, PrimeContext, string>({
   name: TOOL_NAMES.rememberDaily,
   description:
-    "Append a short bullet to today's daily memory file (scoped). Use when the user wants something recorded.",
+    "Append a short bullet to today's daily memory file (lane-based). Use when the user wants something recorded.",
   parameters: rememberDailySchema,
   execute: async ({ note }, runContext) => {
     const context = requirePrimeContext(runContext);
-    const path = await appendScopedDailyNote(
-      { rootDir: context.rootDir, scopeId: context.scopeId },
-      note,
-    );
-    return `Saved to ${path}`;
+    const writeLanes = context.allowedMemoryWriteLanes ?? [];
+    if (writeLanes.length === 0) {
+      return 'No write lanes configured; note not saved.';
+    }
+    const paths: string[] = [];
+    for (const laneId of writeLanes) {
+      const result = await appendLaneDailyNotesUnique({ rootDir: context.rootDir, laneId }, [note]);
+      paths.push(result.path);
+    }
+    return `Saved to ${paths.join(', ')}`;
   },
 });

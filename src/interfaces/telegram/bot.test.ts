@@ -5,10 +5,12 @@ import path from 'node:path';
 
 import {
   createTelegramAdapter,
+  resolveFamilyGroupChatId,
   UNKNOWN_DM_REPLY,
   type TelegramBotLike,
   type TelegramContext,
 } from './bot.js';
+import type { FamilyConfig } from '../../runtime/familyConfig.js';
 import type { FileMemoryConfig } from '../../runtime/haloConfig.js';
 
 type HandlerBag = {
@@ -141,7 +143,7 @@ describe('telegram adapter', () => {
       fileMemory: fileMemoryConfig,
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         getScopeVectorStoreId,
@@ -169,15 +171,18 @@ describe('telegram adapter', () => {
       role: 'parent',
       ageGroup: undefined,
       scopeType: 'dm',
+      model: 'gpt-4.1',
       fileSearchEnabled: true,
       fileSearchVectorStoreId: 'vs_123',
       fileSearchIncludeResults: false,
       fileSearchMaxNumResults: 5,
+      toolsConfig: undefined,
       allowedMemoryReadLanes: ['family_shared', 'parent_private:wags', 'parents_shared'],
       allowedMemoryReadScopes: ['telegram:dm:wags'],
     });
-    expect(appendDailyNote).toHaveBeenCalledWith({ rootDir: '/root', scopeId: 'telegram:dm:wags' }, '[user] hello');
-    expect(appendDailyNote).toHaveBeenCalledWith({ rootDir: '/root', scopeId: 'telegram:dm:wags' }, '[prime] hi there');
+    const allNotes = appendDailyNote.mock.calls.flatMap((args) => (args[1] as string[]) ?? []);
+    expect(allNotes).toContain('[user] hello');
+    expect(allNotes).toContain('[prime] hi there');
     expect(reply).toHaveBeenCalledWith('hi there');
 
     expect(appendJsonl).toHaveBeenCalledTimes(3);
@@ -230,7 +235,7 @@ describe('telegram adapter', () => {
       fileMemory: fileMemoryConfig,
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         getScopeVectorStoreId,
@@ -274,7 +279,7 @@ describe('telegram adapter', () => {
       bot,
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
       },
@@ -322,7 +327,7 @@ describe('telegram adapter', () => {
       bot,
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
       },
@@ -366,7 +371,7 @@ describe('telegram adapter', () => {
       fileMemory: fileMemoryConfig,
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         downloadTelegramFile,
@@ -477,7 +482,7 @@ describe('telegram adapter', () => {
       },
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         downloadTelegramFile,
@@ -562,13 +567,11 @@ describe('telegram adapter', () => {
       ]),
     );
 
-    const imageNoteCall = appendDailyNote.mock.calls.find(([, note]) =>
-      String(note).startsWith('[user:image:photo]'),
-    );
-    expect(imageNoteCall).toBeDefined();
+    const allNotes = appendDailyNote.mock.calls.flatMap((args) => (args[1] as string[]) ?? []);
+    const imageNote = allNotes.find((note) => String(note).startsWith('[user:image:photo]'));
+    expect(imageNote).toBeDefined();
 
-    const imageNote = String(imageNoteCall?.[1] ?? '');
-    const pathMatch = /\[file:([^\]]+)\]/.exec(imageNote);
+    const pathMatch = /\[file:([^\]]+)\]/.exec(imageNote ?? '');
     expect(pathMatch).not.toBeNull();
     const storedRelativePath = pathMatch?.[1] ?? '';
     const stored = await readFile(path.join(rootDir, storedRelativePath));
@@ -602,7 +605,7 @@ describe('telegram adapter', () => {
       },
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         downloadTelegramFile,
@@ -663,7 +666,7 @@ describe('telegram adapter', () => {
       fileMemory: fileMemoryConfig,
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         getScopeVectorStoreId,
@@ -731,7 +734,7 @@ describe('telegram adapter', () => {
       fileMemory: fileMemoryConfig,
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         getScopeVectorStoreId,
@@ -790,7 +793,7 @@ describe('telegram adapter', () => {
       fileMemory: fileMemoryConfig,
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         downloadTelegramFile,
@@ -864,7 +867,7 @@ describe('telegram adapter', () => {
       },
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         downloadTelegramFile,
@@ -923,7 +926,7 @@ describe('telegram adapter', () => {
       },
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         downloadTelegramFile,
@@ -980,7 +983,7 @@ describe('telegram adapter', () => {
     createTelegramAdapter({
       token: 'token',
       bot,
-      deps: { appendJsonl, appendScopedDailyNote: appendDailyNote, runPrime, loadFamilyConfig },
+      deps: { appendJsonl, appendLaneDailyNotesUnique: appendDailyNote, runPrime, loadFamilyConfig },
     });
 
     const reply = vi.fn().mockResolvedValue(undefined);
@@ -1024,7 +1027,7 @@ describe('telegram adapter', () => {
     createTelegramAdapter({
       token: 'token',
       bot,
-      deps: { appendJsonl, appendScopedDailyNote: appendDailyNote, runPrime, loadFamilyConfig },
+      deps: { appendJsonl, appendLaneDailyNotesUnique: appendDailyNote, runPrime, loadFamilyConfig },
     });
 
     const reply = vi.fn().mockResolvedValue(undefined);
@@ -1193,7 +1196,7 @@ describe('telegram adapter', () => {
       now: () => new Date('2026-02-17T10:00:00.000Z'),
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         bootstrapParentOnboarding,
@@ -1379,7 +1382,7 @@ describe('telegram adapter', () => {
       now: () => new Date('2026-02-17T10:00:00.000Z'),
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         bootstrapParentOnboarding,
@@ -1452,7 +1455,7 @@ describe('telegram adapter', () => {
       now: () => new Date('2026-02-17T10:00:00.000Z'),
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         bootstrapParentOnboarding,
@@ -1517,7 +1520,7 @@ describe('telegram adapter', () => {
       now: () => new Date('2026-02-17T10:00:00.000Z'),
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         bootstrapParentOnboarding,
@@ -1586,7 +1589,7 @@ describe('telegram adapter', () => {
       bot,
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         bootstrapParentOnboarding,
@@ -1685,7 +1688,7 @@ describe('telegram adapter', () => {
       now: () => new Date('2026-02-17T10:00:00.000Z'),
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         bootstrapParentOnboarding,
@@ -1736,7 +1739,7 @@ describe('telegram adapter', () => {
     createTelegramAdapter({
       token: 'token',
       bot,
-      deps: { appendJsonl, appendScopedDailyNote: appendDailyNote, runPrime, loadFamilyConfig },
+      deps: { appendJsonl, appendLaneDailyNotesUnique: appendDailyNote, runPrime, loadFamilyConfig },
     });
 
     const reply = vi.fn().mockResolvedValue(undefined);
@@ -1767,7 +1770,7 @@ describe('telegram adapter', () => {
     createTelegramAdapter({
       token: 'token',
       bot,
-      deps: { appendJsonl, appendScopedDailyNote: appendDailyNote, runPrime, loadFamilyConfig },
+      deps: { appendJsonl, appendLaneDailyNotesUnique: appendDailyNote, runPrime, loadFamilyConfig },
     });
 
     const reply = vi.fn().mockResolvedValue(undefined);
@@ -1786,5 +1789,137 @@ describe('telegram adapter', () => {
     expect(runPrime).not.toHaveBeenCalled();
     expect(appendDailyNote).not.toHaveBeenCalled();
     expect(reply).not.toHaveBeenCalled();
+  });
+
+  describe('resolveFamilyGroupChatId', () => {
+    it('returns null for v1 config with no controlPlane', () => {
+      expect(resolveFamilyGroupChatId(familyConfig as unknown as FamilyConfig)).toBeNull();
+    });
+
+    it('returns null for v2 config with no family_group scope', () => {
+      const config = {
+        ...familyConfigWithFamilyGroup,
+        controlPlane: {
+          ...familyConfigWithFamilyGroup.controlPlane,
+          scopes: [
+            {
+              scopeId: 'scope-parents-group',
+              scopeType: 'parents_group' as const,
+              telegramChatId: 777,
+            },
+          ],
+        },
+      } as unknown as FamilyConfig;
+      expect(resolveFamilyGroupChatId(config)).toBeNull();
+    });
+
+    it('returns telegramChatId for v2 config with family_group scope', () => {
+      expect(resolveFamilyGroupChatId(familyConfigWithFamilyGroup as unknown as FamilyConfig)).toBe(888);
+    });
+
+    it('returns null when family_group scope has null telegramChatId', () => {
+      const config = {
+        ...familyConfigWithFamilyGroup,
+        controlPlane: {
+          ...familyConfigWithFamilyGroup.controlPlane,
+          scopes: [
+            {
+              scopeId: 'scope-family-group',
+              scopeType: 'family_group' as const,
+              telegramChatId: null,
+            },
+          ],
+        },
+      } as unknown as FamilyConfig;
+      expect(resolveFamilyGroupChatId(config)).toBeNull();
+    });
+  });
+
+  it('writes daily notes via appendLaneDailyNotesUnique for each write lane', async () => {
+    const bot = makeFakeBot();
+    const appendJsonl = vi.fn().mockResolvedValue(undefined);
+    const appendLaneDailyNotesUnique = vi.fn().mockResolvedValue({ path: 'lane/2026-02-02.md', appendedCount: 1 });
+    const runPrime = vi.fn().mockResolvedValue({ finalOutput: 'lane reply' });
+    const loadFamilyConfig = vi.fn().mockResolvedValue(familyConfig);
+    const getScopeVectorStoreId = vi.fn().mockResolvedValue(null);
+    const now = () => new Date('2026-02-02T00:00:00.000Z');
+
+    createTelegramAdapter({
+      token: 'token',
+      rootDir: '/root',
+      bot,
+      now,
+      fileMemory: { ...fileMemoryConfig, enabled: false },
+      deps: {
+        appendJsonl,
+        appendLaneDailyNotesUnique,
+        runPrime,
+        loadFamilyConfig,
+        getScopeVectorStoreId,
+      },
+    });
+
+    const reply = vi.fn().mockResolvedValue(undefined);
+    const ctx: TelegramContext = {
+      chat: { id: 123, type: 'private' },
+      message: { text: 'hello lanes', message_id: 7 },
+      from: { id: 456 },
+      reply,
+    };
+
+    const handler = bot.handlers.messageText;
+    if (!handler) throw new Error('message handler not registered');
+
+    await handler(ctx);
+
+    // Should have called appendLaneDailyNotesUnique for each write lane
+    expect(appendLaneDailyNotesUnique).toHaveBeenCalled();
+    const calls = appendLaneDailyNotesUnique.mock.calls;
+    const allNotes = calls.map((args) => (args[1] as string[]) ?? []).flat();
+    expect(allNotes.some((note) => note.includes('[user]'))).toBe(true);
+    expect(allNotes.some((note) => note.includes('[prime]'))).toBe(true);
+  });
+
+  it('passes policy.modelPlan.model to runPrime for text messages', async () => {
+    const bot = makeFakeBot();
+    const appendJsonl = vi.fn().mockResolvedValue(undefined);
+    const appendDailyNote = vi.fn().mockResolvedValue('memory/2026-02-02.md');
+    const runPrime = vi.fn().mockResolvedValue({ finalOutput: 'hi there' });
+    const loadFamilyConfig = vi.fn().mockResolvedValue(familyConfig);
+    const getScopeVectorStoreId = vi.fn().mockResolvedValue(null);
+    const now = () => new Date('2026-02-02T00:00:00.000Z');
+
+    createTelegramAdapter({
+      token: 'token',
+      logDir: 'logs',
+      rootDir: '/root',
+      bot,
+      now,
+      fileMemory: { ...fileMemoryConfig, enabled: false },
+      deps: {
+        appendJsonl,
+        appendLaneDailyNotesUnique: appendDailyNote,
+        runPrime,
+        loadFamilyConfig,
+        getScopeVectorStoreId,
+      },
+    });
+
+    const reply = vi.fn().mockResolvedValue(undefined);
+    const ctx: TelegramContext = {
+      chat: { id: 123, type: 'private' },
+      message: { text: 'hello', message_id: 7 },
+      from: { id: 456 },
+      reply,
+    };
+
+    const handler = bot.handlers.messageText;
+    if (!handler) throw new Error('message handler not registered');
+
+    await handler(ctx);
+
+    expect(runPrime).toHaveBeenCalledWith('hello', expect.objectContaining({
+      model: 'gpt-4.1',
+    }));
   });
 });

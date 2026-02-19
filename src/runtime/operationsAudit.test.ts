@@ -1,11 +1,16 @@
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
-import { appendOperationalAuditEvent } from './operationsAudit.js';
+import { appendOperationalAuditEvent, type OperationalAuditEventInput } from './operationsAudit.js';
+import type { OperationalAction } from './incidentLog.js';
 
 describe('operationsAudit', () => {
+  it('OperationalAuditEventInput.action uses the shared OperationalAction type', () => {
+    expectTypeOf<OperationalAuditEventInput['action']>().toEqualTypeOf<OperationalAction>();
+  });
+
   it('writes structured operational audit events as jsonl', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'ops-audit-'));
 

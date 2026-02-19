@@ -55,4 +55,30 @@ describe('file citation policy', () => {
     expect(result.blocked).toBe(true);
     expect(result.output).toBe(CITATION_POLICY_BLOCK_MESSAGE);
   });
+
+  it('does NOT block when output word contains disallowed filename as substring (boundary match)', () => {
+    const policy = buildScopeCitationPolicy({
+      files: [
+        {
+          filename: 'report',
+          storageMetadata: {
+            laneId: 'child_private:kid',
+            scopeId: 'telegram:dm:wags',
+          },
+        },
+      ],
+      allowedLaneIds: ['parent_private:wags'],
+      allowedScopeIds: ['telegram:dm:wags'],
+    });
+
+    // "reported" contains "report" as a substring, but "report" is not a
+    // standalone word/path boundary — boundary-aware matching must NOT block this
+    const result = applyScopeCitationPolicy(
+      'I reported the issue to the team.',
+      policy,
+    );
+
+    expect(result.blocked).toBe(false);
+    expect(result.output).toBe('I reported the issue to the team.');
+  });
 });

@@ -4,10 +4,6 @@ import { resolveMemberMemoryLanes } from './laneTopology.js';
 import { appendLaneDailyNotesUnique, appendLaneLongTermFacts } from './laneMemory.js';
 import { distillMemoryFromItems } from './distiller.js';
 import { distillMemoryFromItemsLLM } from './llmDistiller.js';
-import {
-  appendScopedDailyNotesUnique,
-} from './scopedMemory.js';
-import { appendScopedLongTermFacts } from './scopedLongTerm.js';
 import { loadFamilyConfig } from '../runtime/familyConfig.js';
 
 type RunDistillationOptions = {
@@ -109,25 +105,6 @@ async function resolveWriteLanes(opts: RunDistillationOptions): Promise<string[]
   }
 }
 
-async function writeToScopedMemory(
-  opts: RunDistillationOptions,
-  distilled: DistilledOutput,
-): Promise<void> {
-  if (distilled.durableFacts.length > 0) {
-    await appendScopedLongTermFacts(
-      { rootDir: opts.rootDir, scopeId: opts.scopeId },
-      distilled.durableFacts,
-    );
-  }
-
-  if (distilled.temporalNotes.length > 0) {
-    await appendScopedDailyNotesUnique(
-      { rootDir: opts.rootDir, scopeId: opts.scopeId },
-      distilled.temporalNotes,
-    );
-  }
-}
-
 async function writeToLaneMemory(
   opts: RunDistillationOptions,
   distilled: DistilledOutput,
@@ -155,7 +132,6 @@ async function writeDistilled(
   opts: RunDistillationOptions,
   distilled: DistilledOutput,
 ): Promise<{ durableFacts: number; temporalNotes: number }> {
-  await writeToScopedMemory(opts, distilled);
   await writeToLaneMemory(opts, distilled);
 
   return {

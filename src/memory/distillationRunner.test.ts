@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import type { AgentInputItem } from '@openai/agents';
 
 import { runDistillation } from './distillationRunner.js';
 import { getLaneDailyPath, getLaneLongTermPath } from './laneMemory.js';
+import { getScopedLongTermPath, getScopedDailyPath } from './scopedMemory.js';
 
 const user = (text: string): AgentInputItem => ({
   type: 'message',
@@ -127,5 +129,82 @@ describe('distillationRunner lane routing', () => {
 
     expect(longTerm.match(/prefers mango milkshake/g)?.length).toBe(1);
     expect(daily.match(/today finished homework/g)?.length).toBe(1);
+  });
+
+  it('does NOT write to scoped memory paths (lanes-only)', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'halo-distillation-no-scoped-'));
+    const configDir = path.join(rootDir, 'config');
+    await mkdir(configDir, { recursive: true });
+
+    await writeFile(
+      path.join(configDir, 'family.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 2,
+          policyVersion: 'v2',
+          familyId: 'default',
+          activeProfileId: 'local-family',
+          profiles: [
+            {
+              profileId: 'parent_profile',
+              role: 'parent',
+              capabilityTierId: 'cap_parent',
+              memoryLanePolicyId: 'lane_parent',
+              modelPolicyId: 'model_parent',
+              safetyPolicyId: 'safety_parent',
+            },
+          ],
+          members: [
+            {
+              memberId: 'wags',
+              displayName: 'Wags',
+              role: 'parent',
+              profileId: 'parent_profile',
+              telegramUserIds: [456],
+            },
+          ],
+          scopes: [],
+          capabilityTiers: {
+            cap_parent: ['chat.respond'],
+          },
+          memoryLanePolicies: {
+            lane_parent: {
+              readLanes: ['parent_private:{memberId}'],
+              writeLanes: ['parent_private:{memberId}'],
+            },
+          },
+          modelPolicies: {
+            model_parent: {
+              tier: 'parent_default',
+              model: 'gpt-5.1',
+              reason: 'parent_default',
+            },
+          },
+          safetyPolicies: {
+            safety_parent: {
+              riskLevel: 'low',
+              escalationPolicyId: 'adult_default',
+            },
+          },
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+
+    const scopeId = 'telegram:dm:wags';
+    const items = [
+      user('remember: likes espresso'),
+      user('today read a book'),
+    ];
+
+    await runDistillation({ rootDir, scopeId, items, mode: 'deterministic' });
+
+    const scopedLongTermPath = getScopedLongTermPath({ rootDir, scopeId });
+    const scopedDailyPath = getScopedDailyPath({ rootDir, scopeId }, new Date());
+
+    expect(existsSync(scopedLongTermPath)).toBe(false);
+    expect(existsSync(scopedDailyPath)).toBe(false);
   });
 });

@@ -1,50 +1,217 @@
 # Configuration
 
-This project uses **two** JSON files.
+> Last updated: 2026-02-19
 
-- `HALO_HOME/config.json` (gateway runtime settings, required for `pnpm start:gateway`)
-- `HALO_HOME/config/family.json` (Telegram policy + `/policy/status`)
+This project uses a primary v2 config path and a legacy v1 path.
 
-Examples:
-- `config/halo.example.json`
-- `config/family.example.json`
+## v2 (Primary): control-plane.json
 
-## Bootstrap
+The v2 control plane is the primary configuration path for new setups. It defines family members, profiles, capability tiers, memory lane policies, model policies, and safety policies in a single file.
 
-Recommended:
+Template: `config/control-plane.example.json`
 
-```bash
-pnpm halo:config:init
-```
-
-Manual:
+### Bootstrap
 
 ```bash
-cp config/halo.example.json ~/.halo/config.json
-mkdir -p ~/.halo/config
-cp config/family.example.json ~/.halo/config/family.json
-# edit both files
+cp config/control-plane.example.json ~/.halo/config/control-plane.json
+# edit the file: update members, telegramUserIds, telegramChatId for groups
 ```
 
-Notes:
-- `TELEGRAM_BOT_TOKEN` stays in the environment (don't put secrets in config.json).
-- `config.json` no longer embeds `family`; family policy lives only in `config/family.json`.
+Then point `config.json` to it via the `controlPlane` loader block (see [config.json `controlPlane` block](#configjson-controlplane-block)).
 
-## Principles
+### control-plane.json structure
 
-- Keep configs small and explicit.
-- Validate with Zod at startup.
-- Version configs with `schemaVersion`.
+```json
+{
+  "schemaVersion": 2,
+  "policyVersion": "v2.0.0",
+  "familyId": "default",
+  "activeProfileId": "local-family",
+  "profiles": [
+    {
+      "profileId": "parent_default",
+      "role": "parent",
+      "capabilityTierId": "parent_dm",
+      "memoryLanePolicyId": "parent_lane",
+      "modelPolicyId": "parent_model",
+      "safetyPolicyId": "parent_safety"
+    }
+  ],
+  "members": [
+    {
+      "memberId": "wags",
+      "displayName": "Wags",
+      "role": "parent",
+      "profileId": "parent_default",
+      "telegramUserIds": [889348242]
+    }
+  ],
+  "scopes": [
+    { "scopeId": "telegram:parents_group", "scopeType": "parents_group", "telegramChatId": null },
+    { "scopeId": "telegram:family_group",  "scopeType": "family_group",  "telegramChatId": null }
+  ],
+  "capabilityTiers": {
+    "parent_dm": ["chat.respond", "tools.shell", "tools.web_search"]
+  },
+  "memoryLanePolicies": {
+    "parent_lane": {
+      "readLanes":  ["parent_private:wags", "parents_shared", "family_shared"],
+      "writeLanes": ["parent_private:wags", "parents_shared"]
+    }
+  },
+  "modelPolicies": {
+    "parent_model": { "tier": "parent_default", "model": "gpt-5.1", "reason": "parent_dm_default" }
+  },
+  "safetyPolicies": {
+    "parent_safety": { "riskLevel": "low", "escalationPolicyId": "none" }
+  }
+}
+```
 
-## config.json structure
+### Top-level fields
+
+- `schemaVersion`: must be `2` for v2 control plane
+- `policyVersion`: free-form policy version string (e.g. `"v2.0.0"`)
+- `familyId`: stable household identifier
+- `activeProfileId`: currently active global profile (used for group-level defaults)
+- `profiles`: array of named profiles — each profile links a role to capability/memory/model/safety policies
+- `members`: array of family members with `profileId` references (must match a `profiles` entry)
+- `scopes`: list of Telegram group scopes with their `telegramChatId` values
+  - `scopeType: "parents_group"` — parents-only group
+  - `scopeType: "family_group"` — whole-family group (mention-gated)
+
+### profiles
+
+Each profile links a role to the four policy IDs:
+
+| Field | Description |
+|-------|-------------|
+| `profileId` | Unique name referenced by members |
+| `role` | `parent` or `child` |
+| `capabilityTierId` | Key into `capabilityTiers` |
+| `memoryLanePolicyId` | Key into `memoryLanePolicies` |
+| `modelPolicyId` | Key into `modelPolicies` |
+| `safetyPolicyId` | Key into `safetyPolicies` |
+
+### capabilityTiers
+
+Maps tier ID → array of allowed capability strings.
+
+Built-in capabilities:
+- `chat.respond` — basic DM response
+- `chat.respond.group_safe` — group chat response (used in parents_group / family_group)
+- `tools.web_search` — hosted web search tool
+- `tools.shell` — shell tool (parent only, must be enabled in config.json `tools.shell`)
+
+### memoryLanePolicies
+
+Maps policy ID → `{ readLanes, writeLanes }`.
+
+Lane naming convention:
+- `parent_private:<memberId>` — private to one parent
+- `parents_shared` — shared among all parents
+- `child_private:<memberId>` — private to one child
+- `child_shared` — shared among all children
+- `family_shared` — household-wide
+
+### modelPolicies
+
+Maps policy ID → `{ tier, model, reason }`.
+
+- `tier`: logical tier name (e.g. `"parent_default"`, `"child_default"`)
+- `model`: OpenAI model string (e.g. `"gpt-5.1"`, `"gpt-5.1-mini"`)
+- `reason`: free-form label surfaced in audit logs
+
+### safetyPolicies
+
+Maps policy ID → `{ riskLevel, escalationPolicyId }`.
+
+- `riskLevel`: `"low"` | `"medium"` | `"high"`
+- `escalationPolicyId`: escalation label (e.g. `"none"`, `"minor_default"`)
+
+Medium-risk child requests trigger `requires_parent_approval` by default (configurable via `profilePolicies` overrides in the DecisionEnvelope input).
+
+---
+
+## config.json `controlPlane` block
+
+`config.json` acts as a loader that points to the active control plane file:
+
+```json
+{
+  "controlPlane": {
+    "activeProfile": "v2",
+    "profiles": {
+      "legacy": { "path": "config/family.json" },
+      "v2":     { "path": "config/control-plane.json" }
+    }
+  }
+}
+```
+
+- `activeProfile`: which profile to load (`"v2"` for the control plane, `"legacy"` for v1)
+- `profiles`: map of profile name → `{ path }` (relative to `HALO_HOME` or absolute)
+
+Switch between v1 and v2 by changing `activeProfile` (or use the env var override).
+
+---
+
+## Environment variable overrides
+
+| Variable | Effect |
+|----------|--------|
+| `HALO_HOME` | Runtime root (default `~/.halo`) |
+| `HALO_CONTROL_PLANE_PATH` | Direct path to control plane file (bypasses `config.json` loader) |
+| `HALO_CONTROL_PLANE_PROFILE` | Override the `activeProfile` value in `config.json` at runtime |
+| `GATEWAY_HOST` | Override `gateway.host` |
+| `GATEWAY_PORT` | Override `gateway.port` |
+| `LOG_DIR` | Override the log directory |
+| `SQLITE_VEC_EXT` | sqlite-vec extension path for semantic memory |
+| `HALO_COMPACTION_ENABLED` | Toggle compaction defaults in CLI/dev |
+| `HALO_DISTILLATION_ENABLED` | Toggle distillation defaults in CLI/dev |
+
+---
+
+## v1 (Legacy): family.json
+
+The v1 `family.json` format still works and will be loaded when `activeProfile` points to it (or when no `controlPlane` block exists in `config.json`).
 
 ```json
 {
   "schemaVersion": 1,
-  "gateway": {
-    "host": "127.0.0.1",
-    "port": 8787
-  },
+  "familyId": "default",
+  "members": [
+    {
+      "memberId": "wags",
+      "displayName": "Wags",
+      "role": "parent",
+      "telegramUserIds": [889348242]
+    }
+  ],
+  "parentsGroup": { "telegramChatId": null }
+}
+```
+
+Fields:
+- `schemaVersion`: `1`
+- `familyId`: string
+- `members[]`: list of members
+  - `memberId`, `displayName`, `role` (`parent` | `child`)
+  - `ageGroup`: required for children (`child` | `teen` | `young_adult`)
+  - `parentalVisibility`: optional, allow parents to see child transcripts
+  - `telegramUserIds`: array of Telegram user IDs
+- `parentsGroup.telegramChatId`: optional approved group chat id (Telegram group IDs are **negative**)
+
+Note: `config.json` no longer embeds `family`; policy lives only in the config file pointed to by the `controlPlane` loader.
+
+---
+
+## config.json full structure
+
+```json
+{
+  "schemaVersion": 1,
+  "gateway": { "host": "127.0.0.1", "port": 8787 },
   "features": {
     "compactionEnabled": false,
     "distillationEnabled": false
@@ -72,67 +239,47 @@ Notes:
       "minScore": 0.005
     }
   },
-  "fileMemory": {
-    "enabled": false,
-    "uploadEnabled": false,
-    "maxFileSizeMb": 20,
-    "allowedExtensions": ["pdf", "txt", "md", "docx", "pptx", "csv", "json", "html"],
-    "maxFilesPerScope": 200,
-    "pollIntervalMs": 1500,
-    "includeSearchResults": false,
-    "maxNumResults": 5,
-    "retention": {
-      "enabled": false,
-      "maxAgeDays": 30,
-      "runIntervalMinutes": 360,
-      "deleteOpenAIFiles": false,
-      "maxFilesPerRun": 25,
-      "dryRun": false,
-      "keepRecentPerScope": 2,
-      "maxDeletesPerScopePerRun": 10,
-      "allowScopeIds": [],
-      "denyScopeIds": [],
-      "policyPreset": "exclude_children"
+  "fileMemory": { "enabled": false },
+  "controlPlane": {
+    "activeProfile": "v2",
+    "profiles": {
+      "legacy": { "path": "config/family.json" },
+      "v2":     { "path": "config/control-plane.json" }
     }
+  },
+  "tools": {
+    "shell": { "enabled": false, "timeoutMs": 30000, "maxOutputLength": 4096 }
   }
 }
 ```
 
-### gateway
+See `config/halo.example.json` for the full annotated template.
 
+### gateway
 - `host`: bind address (default `127.0.0.1`)
 - `port`: bind port (default `8787`)
 
 ### features
-
-- `compactionEnabled`: enable OpenAI Responses API compaction (default `false` in config file)
-- `distillationEnabled`: enable memory distillation (default `false`)
-
-Notes:
-- When running via the gateway (`pnpm start:gateway`), the config file values are used.
-- `HALO_COMPACTION_ENABLED` and `HALO_DISTILLATION_ENABLED` only affect SessionStore defaults when it is instantiated without explicit options (mainly CLI).
-- SessionStore defaults also auto-enable compaction when `OPENAI_API_KEY` is set, unless you pass explicit options.
+- `compactionEnabled`: enable OpenAI Responses API compaction
+- `distillationEnabled`: enable memory distillation
 
 ### memory
-
 - `distillationEveryNItems`: trigger distillation after N transcript items (default `20`)
 - `distillationMaxItems`: max items to consider when distilling (default `200`)
 - `distillationMode`: `deterministic` or `llm`
 
 ### childSafe
-
 - `enabled`: apply child-safe response filtering
 - `maxMessageLength`: cap child responses (characters)
 - `blockedTopics`: additional blocked topics (strings)
 
 ### semanticMemory
-
 - `enabled`: toggle semantic memory indexing + search
 - `embeddingProvider`: `openai` or `gemini`
 - `embeddingModel`: provider model name
 - `embeddingDimensions`: embedding size
 - `vecExtensionPath`: optional override for sqlite-vec extension path
-- `syncIntervalMinutes`: background sync cadence (minutes) for semantic indexing on active scopes (markdown + transcript deltas; gateway + dev:telegram)
+- `syncIntervalMinutes`: background sync cadence for active scopes
 - `search`: scoring weights and minimum relevance
 
 Requirements:
@@ -142,58 +289,12 @@ Requirements:
 
 ### fileMemory
 
-- `enabled`: enables scoped file-memory behavior and file-search tool wiring.
-- `uploadEnabled`: enables Telegram document upload ingestion.
-- `maxFileSizeMb`: per-file upload limit.
-- `allowedExtensions`: upload allowlist by extension.
-- `maxFilesPerScope`: hard cap on uploaded files tracked per scope.
-- `pollIntervalMs`: polling interval for OpenAI vector-store indexing status.
-- `includeSearchResults`: controls hosted `file_search` tool result inclusion.
-- `maxNumResults`: max results returned by hosted `file_search`.
-- `retention.enabled`: enables background retention cleanup for stale uploaded files.
-- `retention.maxAgeDays`: file age threshold for cleanup candidates.
-- `retention.runIntervalMinutes`: background cleanup cadence.
-- `retention.deleteOpenAIFiles`: when `true`, also deletes underlying OpenAI File objects.
-- `retention.maxFilesPerRun`: safety cap on deletions per cleanup run.
-- `retention.dryRun`: computes retention candidates without deleting files.
-- `retention.keepRecentPerScope`: protects the newest N files per scope from retention deletes (default: `2`).
-- `retention.maxDeletesPerScopePerRun`: per-scope deletion cap for each retention run.
-- `retention.allowScopeIds`: optional allowlist; when set, retention runs only for these scopes.
-- `retention.denyScopeIds`: denylist; these scopes are never touched by retention (deny wins over allow).
-- `retention.policyPreset`: quick policy mode — `all`, `parents_only`, `exclude_children`, or `custom` (default: `exclude_children`).
+See `config/halo.example.json` for the full `fileMemory` block. Key fields:
+- `enabled`: enables scoped file-memory behavior and file-search tool wiring
+- `uploadEnabled`: enables Telegram document upload ingestion
+- `retention.policyPreset`: `all`, `parents_only`, `exclude_children`, or `custom`
 
-Notes:
-- `parents_only` keeps retention to parent DM scopes + parents-group scope (requires valid family member roles in `family.json`).
-- `exclude_children` skips child DM scopes, while still allowing unknown DM scopes.
-- `custom` is intended for explicit `allowScopeIds` / `denyScopeIds` control.
-- Filter precedence: `denyScopeIds` → `allowScopeIds` (if set) → `policyPreset`.
-- Manual retention runs (`POST /file-retention/run`) support additional ad-hoc metadata filters: `uploadedBy`, `extensions`, `mimePrefixes`, `uploadedAfterMs`, `uploadedBeforeMs`.
-
-## family.json structure
-
-Defines family members and the parents-only group.
-
-Fields:
-- `schemaVersion`: number
-- `familyId`: string
-- `members[]`: list of members
-  - `memberId`: stable identifier (e.g. `wags`)
-  - `displayName`: human-readable name
-  - `role`: `parent` | `child`
-  - `ageGroup`: required for children (`child` | `teen` | `young_adult`)
-  - `parentalVisibility`: optional, allow parents to see child transcripts
-  - `telegramUserIds`: array of Telegram user IDs for this member
-- `parentsGroup.telegramChatId`: optional, approved group chat id (Telegram group IDs can be **negative**)
-
-## Environment overrides
-
-- `HALO_HOME`: runtime root (default `~/.halo`)
-- `GATEWAY_HOST`: override `gateway.host`
-- `GATEWAY_PORT`: override `gateway.port`
-- `LOG_DIR`: override the log directory for gateway and telegram runs
-- `SQLITE_VEC_EXT`: sqlite-vec extension path for semantic memory
-- `HALO_COMPACTION_ENABLED`: toggle compaction defaults in CLI/dev
-- `HALO_DISTILLATION_ENABLED`: toggle distillation defaults in CLI/dev
+---
 
 ## nodes.json (future)
 
