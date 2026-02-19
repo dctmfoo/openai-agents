@@ -428,14 +428,22 @@ const hasErrorCode = (err: unknown): err is { code: string } => {
   return Boolean(err && typeof err === 'object' && 'code' in err);
 };
 
+export async function resolveFamilyConfigPath(
+  options: FamilyConfigLoadOptions = {},
+): Promise<string> {
+  const env = options.env ?? process.env;
+  const haloHome = options.haloHome ?? getHaloHome(env);
+  const controlPlanePath = await getControlPlanePathFromConfig(haloHome, env);
+  return controlPlanePath ?? resolveDefaultFamilyConfigPath(haloHome);
+}
+
 export async function loadFamilyConfig(
   options: FamilyConfigLoadOptions = {},
 ): Promise<FamilyConfig> {
   const env = options.env ?? process.env;
   const haloHome = options.haloHome ?? getHaloHome(env);
 
-  const controlPlanePath = await getControlPlanePathFromConfig(haloHome, env);
-  const configPath = controlPlanePath ?? resolveDefaultFamilyConfigPath(haloHome);
+  const configPath = await resolveFamilyConfigPath({ env, haloHome });
 
   let raw: string;
   try {

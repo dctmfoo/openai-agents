@@ -34,6 +34,7 @@ export type PrimeRunOptions = {
   toolsConfig?: ToolsConfig;
   allowedMemoryReadLanes?: string[];
   allowedMemoryReadScopes?: string[];
+  allowedMemoryWriteLanes?: string[];
   /**
    * Skip session-backed history for this run.
    * Useful for large multimodal payloads that should not bloat long-lived sessions.
@@ -260,6 +261,7 @@ export async function runPrime(input: PrimeInput, opts: PrimeRunOptions = {}) {
     toolsConfig: opts.toolsConfig,
     allowedMemoryReadLanes: opts.allowedMemoryReadLanes,
     allowedMemoryReadScopes: opts.allowedMemoryReadScopes,
+    allowedMemoryWriteLanes: opts.allowedMemoryWriteLanes,
   };
 
   const agent = await makePrimeAgent(context);

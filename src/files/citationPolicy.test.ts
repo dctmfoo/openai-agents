@@ -56,6 +56,53 @@ describe('file citation policy', () => {
     expect(result.output).toBe(CITATION_POLICY_BLOCK_MESSAGE);
   });
 
+  it('blocks when disallowed filename appears after sentence-ending punctuation', () => {
+    const policy = buildScopeCitationPolicy({
+      files: [
+        {
+          filename: 'report.pdf',
+          storageMetadata: {
+            laneId: 'child_private:kid',
+            scopeId: 'telegram:dm:wags',
+          },
+        },
+      ],
+      allowedLaneIds: ['parent_private:wags'],
+      allowedScopeIds: ['telegram:dm:wags'],
+    });
+
+    const result = applyScopeCitationPolicy(
+      'See the details in report.pdf.',
+      policy,
+    );
+
+    expect(result.blocked).toBe(true);
+    expect(result.output).toBe(CITATION_POLICY_BLOCK_MESSAGE);
+  });
+
+  it('blocks when disallowed filename follows exclamation or question mark', () => {
+    const policy = buildScopeCitationPolicy({
+      files: [
+        {
+          filename: 'secret.txt',
+          storageMetadata: {
+            laneId: 'child_private:kid',
+            scopeId: 'telegram:dm:wags',
+          },
+        },
+      ],
+      allowedLaneIds: ['parent_private:wags'],
+      allowedScopeIds: ['telegram:dm:wags'],
+    });
+
+    expect(
+      applyScopeCitationPolicy('Did you read secret.txt?', policy).blocked,
+    ).toBe(true);
+    expect(
+      applyScopeCitationPolicy('Check secret.txt!', policy).blocked,
+    ).toBe(true);
+  });
+
   it('does NOT block when output word contains disallowed filename as substring (boundary match)', () => {
     const policy = buildScopeCitationPolicy({
       files: [

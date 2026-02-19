@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { z } from 'zod';
 
 import {
-  getFamilyConfigPath,
+  resolveFamilyConfigPath,
   loadFamilyConfig,
   type FamilyConfig,
 } from './familyConfig.js';
@@ -139,7 +139,7 @@ const persistFamilyConfig = async (
   haloHome: string,
   config: FamilyConfig,
 ): Promise<void> => {
-  const path = getFamilyConfigPath({ HALO_HOME: haloHome } as NodeJS.ProcessEnv);
+  const path = await resolveFamilyConfigPath({ haloHome });
 
   if (config.schemaVersion === 2) {
     const rawText = await readFile(path, 'utf8');

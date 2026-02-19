@@ -1174,6 +1174,7 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
         toolsConfig,
         allowedMemoryReadLanes: policy.allowedMemoryReadLanes,
         allowedMemoryReadScopes: [scopeId],
+        allowedMemoryWriteLanes: policy.allowedMemoryWriteLanes,
       });
       const finalOutput = String(result.finalOutput ?? '').trim() || '(no output)';
 
@@ -1351,6 +1352,7 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
         toolsConfig,
         allowedMemoryReadLanes: policy.allowedMemoryReadLanes,
         allowedMemoryReadScopes: [scopeId],
+        allowedMemoryWriteLanes: policy.allowedMemoryWriteLanes,
       });
       const finalOutput = String(result.finalOutput ?? '').trim() || '(no output)';
 
@@ -1534,6 +1536,7 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Telegram
         toolsConfig,
         allowedMemoryReadLanes: policy.allowedMemoryReadLanes,
         allowedMemoryReadScopes: [scopeId],
+        allowedMemoryWriteLanes: policy.allowedMemoryWriteLanes,
       });
 
       const finalOutput = String(result.finalOutput ?? '').trim() || '(no output)';

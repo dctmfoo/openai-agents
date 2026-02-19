@@ -41,7 +41,10 @@ describe('buildShellTool', () => {
     const tool = buildShellTool(baseConfig, 'parent');
     if (!tool) throw new Error('Expected shell tool');
 
-    const result = await tool.shell.run({ commands: ['echo hello'] });
+    const shell = tool.shell;
+    if (!shell) throw new Error('Expected shell runner');
+
+    const result = await shell.run({ commands: ['echo hello'] });
 
     expect(result.output).toHaveLength(1);
     expect(result.output[0].stdout.trim()).toBe('hello');
@@ -52,7 +55,10 @@ describe('buildShellTool', () => {
     const tool = buildShellTool(baseConfig, 'parent');
     if (!tool) throw new Error('Expected shell tool');
 
-    const result = await tool.shell.run({ commands: ['sudo echo hi'] });
+    const shell = tool.shell;
+    if (!shell) throw new Error('Expected shell runner');
+
+    const result = await shell.run({ commands: ['sudo echo hi'] });
 
     expect(result.output).toHaveLength(1);
     expect(result.output[0].outcome).toEqual({ type: 'exit', exitCode: 126 });
@@ -63,7 +69,10 @@ describe('buildShellTool', () => {
     const tool = buildShellTool(baseConfig, 'parent');
     if (!tool) throw new Error('Expected shell tool');
 
-    const result = await tool.shell.run({ commands: ['cat /etc/passwd'] });
+    const shell = tool.shell;
+    if (!shell) throw new Error('Expected shell runner');
+
+    const result = await shell.run({ commands: ['cat /etc/passwd'] });
 
     expect(result.output).toHaveLength(1);
     expect(result.output[0].outcome).toEqual({ type: 'exit', exitCode: 126 });
@@ -87,7 +96,10 @@ describe('buildShellTool', () => {
     );
     if (!tool) throw new Error('Expected shell tool');
 
-    const result = await tool.shell.run({ commands: ['sleep 10'] });
+    const shell = tool.shell;
+    if (!shell) throw new Error('Expected shell runner');
+
+    const result = await shell.run({ commands: ['sleep 10'] });
 
     expect(result.output).toHaveLength(1);
     expect(result.output[0].outcome).toEqual({ type: 'timeout' });

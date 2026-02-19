@@ -104,7 +104,7 @@ function outputMentionsFilename(output: string, filename: string): boolean {
   }
 
   const pattern = new RegExp(
-    `(?:^|[\\s/\\\\,;:"'(\\[{])${escapeRegex(normalizedFilename)}(?:$|[\\s/\\\\,;:"'\\])}])`,
+    `(?:^|[\\s/\\\\,;:"'(\\[{.!?])${escapeRegex(normalizedFilename)}(?:$|[\\s/\\\\,;:"'\\])}.!?])`,
     'i',
   );
 

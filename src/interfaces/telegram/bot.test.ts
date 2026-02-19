@@ -179,6 +179,7 @@ describe('telegram adapter', () => {
       toolsConfig: undefined,
       allowedMemoryReadLanes: ['family_shared', 'parent_private:wags', 'parents_shared'],
       allowedMemoryReadScopes: ['telegram:dm:wags'],
+      allowedMemoryWriteLanes: ['parent_private:wags'],
     });
     const allNotes = appendDailyNote.mock.calls.flatMap((args) => (args[1] as string[]) ?? []);
     expect(allNotes).toContain('[user] hello');
@@ -309,6 +310,7 @@ describe('telegram adapter', () => {
         scopeType: undefined,
         fileSearchEnabled: false,
         allowedMemoryReadLanes: ['family_shared'],
+        allowedMemoryWriteLanes: ['family_shared'],
       }),
     );
     expect(reply).toHaveBeenCalledWith('group-safe reply');
@@ -709,6 +711,7 @@ describe('telegram adapter', () => {
         scopeId: 'telegram:dm:wags',
         fileSearchEnabled: true,
         allowedMemoryReadScopes: ['telegram:dm:wags'],
+        allowedMemoryWriteLanes: ['parent_private:wags'],
       }),
     );
     expect(reply).toHaveBeenCalledWith('voice reply');
