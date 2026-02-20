@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-export type Chunk = {
+type Chunk = {
   id: string;
   path: string;
   startLine: number;
@@ -9,7 +9,7 @@ export type Chunk = {
   tokenEstimate: number;
 };
 
-export type ChunkerOptions = {
+type ChunkerOptions = {
   path: string;
   text: string;
   targetTokens?: number;

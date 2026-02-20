@@ -1,7 +1,7 @@
-export type Role = 'parent' | 'child';
-export type AgeGroup = 'child' | 'teen' | 'young_adult';
+type Role = 'parent' | 'child';
+type AgeGroup = 'child' | 'teen' | 'young_adult';
 
-export type FilteredResponse = {
+type FilteredResponse = {
   safe: boolean;
   filtered: string;
 };

@@ -2,9 +2,24 @@ import { createServer, type Server } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadFamilyConfig } from '../runtime/familyConfig.js';
+import {
+  canManageOperationalControls,
+  resolveLaneRetentionDays,
+} from '../runtime/operationsPolicy.js';
+import { appendOperationalAuditEvent } from '../runtime/operationsAudit.js';
+import type { OperationalAction } from '../runtime/incidentLog.js';
+import {
+  createRuntimeBackup,
+  restoreRuntimeBackup,
+} from '../runtime/backupManager.js';
 import { hashSessionId } from '../sessions/sessionHash.js';
 import type { SessionStore } from '../sessions/sessionStore.js';
 import { runDistillation } from '../memory/distillationRunner.js';
+import {
+  deleteLaneMemory,
+  exportLaneMemory,
+  runLaneRetention,
+} from '../memory/laneOperations.js';
 import { SemanticMemory, type SemanticMemoryConfig } from '../memory/semanticMemory.js';
 import type { SemanticSyncStatusSnapshot } from '../memory/semanticSyncScheduler.js';
 import {
@@ -17,7 +32,7 @@ import type {
   FileMemoryRetentionStatusSnapshot,
 } from '../files/fileMemoryRetentionScheduler.js';
 
-export type HaloHomePaths = {
+type HaloHomePaths = {
   root: string;
   config: string;
   docs: string;
@@ -109,7 +124,7 @@ type PolicyStatusPayload = {
   scopes: PolicyScopeStatus[];
 };
 
-export type StatusContext = {
+type StatusContext = {
   startedAtMs: number;
   host: string;
   port: number;
@@ -123,7 +138,7 @@ export type StatusContext = {
   now?: () => number;
 };
 
-export type StatusHandler = (
+type StatusHandler = (
   req: {
     method?: string;
     url?: string;
@@ -185,6 +200,19 @@ const parseMsQuery = (value: string | null): number | undefined => {
   return parsed;
 };
 
+const parseDateQuery = (value: string | null): Date | undefined => {
+  if (value === null) {
+    return undefined;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return undefined;
+  }
+
+  return parsed;
+};
+
 const decodePathParam = (raw: string): string | null => {
   try {
     return decodeURIComponent(raw);
@@ -219,6 +247,82 @@ const matchSessionFileRoute = (path: string): SessionFileRoute | null => {
     const fileRef = decodePathParam(deleteMatch[2]);
     if (!scopeId || !fileRef) return null;
     return { kind: 'delete', scopeId, fileRef };
+  }
+
+  return null;
+};
+
+type LaneMemoryRoute =
+  | { kind: 'export'; laneId: string }
+  | { kind: 'delete'; laneId: string }
+  | { kind: 'retention'; laneId: string };
+
+const matchLaneMemoryRoute = (path: string): LaneMemoryRoute | null => {
+  const exportMatch = path.match(/^\/memory\/lanes\/(.+)\/export$/);
+  if (exportMatch) {
+    const laneId = decodePathParam(exportMatch[1]);
+    if (!laneId) return null;
+    return {
+      kind: 'export',
+      laneId,
+    };
+  }
+
+  const deleteMatch = path.match(/^\/memory\/lanes\/(.+)\/delete$/);
+  if (deleteMatch) {
+    const laneId = decodePathParam(deleteMatch[1]);
+    if (!laneId) return null;
+    return {
+      kind: 'delete',
+      laneId,
+    };
+  }
+
+  const retentionMatch = path.match(/^\/memory\/lanes\/(.+)\/retention\/run$/);
+  if (retentionMatch) {
+    const laneId = decodePathParam(retentionMatch[1]);
+    if (!laneId) return null;
+    return {
+      kind: 'retention',
+      laneId,
+    };
+  }
+
+  return null;
+};
+
+const laneActionFromRouteKind = (
+  kind: LaneMemoryRoute['kind'],
+): 'lane_export' | 'lane_delete' | 'lane_retention' => {
+  switch (kind) {
+    case 'export':
+      return 'lane_export';
+    case 'delete':
+      return 'lane_delete';
+    case 'retention':
+      return 'lane_retention';
+  }
+};
+
+const laneMethodFromRouteKind = (kind: LaneMemoryRoute['kind']): 'GET' | 'POST' => {
+  if (kind === 'export') {
+    return 'GET';
+  }
+
+  return 'POST';
+};
+
+type BackupOperationsRoute =
+  | { kind: 'create' }
+  | { kind: 'restore' };
+
+const matchBackupOperationsRoute = (path: string): BackupOperationsRoute | null => {
+  if (path === '/operations/backup/create') {
+    return { kind: 'create' };
+  }
+
+  if (path === '/operations/backup/restore') {
+    return { kind: 'restore' };
   }
 
   return null;
@@ -314,7 +418,7 @@ const readTranscript = async (path: string) => {
   }
 };
 
-export type AdminServerOptions = {
+type AdminServerOptions = {
   host: string;
   port: number;
   haloHome: string;
@@ -328,7 +432,7 @@ export type AdminServerOptions = {
   now?: () => number;
 };
 
-export type AdminServer = {
+type AdminServer = {
   server: Server;
   handler: StatusHandler;
   context: StatusContext;
@@ -374,6 +478,82 @@ function createStatusPayload(context: StatusContext): GatewayStatus {
     semanticSync: context.semanticSyncStatusProvider?.(),
     fileRetention: context.fileRetentionStatusProvider?.(),
   };
+}
+
+type OperationsActor = {
+  family: Awaited<ReturnType<typeof loadFamilyConfig>>;
+  memberId: string;
+};
+
+async function resolveOperationsActor(
+  context: StatusContext,
+  memberIdRaw: string | null,
+): Promise<
+  | { ok: true; actor: OperationsActor }
+  | {
+      ok: false;
+      statusCode: number;
+      payload: { error: string; reason?: string };
+      audit?: {
+        memberId: string;
+        reason: string;
+      };
+    }
+> {
+  const memberId = memberIdRaw?.trim() ?? '';
+  if (!memberId) {
+    return {
+      ok: false,
+      statusCode: 400,
+      payload: { error: 'missing_member_id' },
+    };
+  }
+
+  const family = await loadFamilyConfig({ haloHome: context.haloHome.root });
+  const decision = canManageOperationalControls(family, memberId);
+  if (!decision.allow) {
+    return {
+      ok: false,
+      statusCode: 403,
+      payload: {
+        error: 'operations_forbidden',
+        reason: decision.reason,
+      },
+      audit: {
+        memberId,
+        reason: decision.reason,
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    actor: {
+      family,
+      memberId,
+    },
+  };
+}
+
+async function writeOperationalAudit(
+  context: StatusContext,
+  input: {
+    action: OperationalAction;
+    actorMemberId: string;
+    targetLaneId?: string;
+    targetBackupId?: string;
+    outcome: 'allowed' | 'denied' | 'failed';
+    details?: Record<string, unknown>;
+  },
+): Promise<void> {
+  try {
+    await appendOperationalAuditEvent({
+      rootDir: context.haloHome.root,
+      ...input,
+    });
+  } catch {
+    // Audit writes must not break operator endpoints.
+  }
 }
 
 export function createStatusHandler(context: StatusContext): StatusHandler {
@@ -489,6 +669,242 @@ export function createStatusHandler(context: StatusContext): StatusHandler {
           },
           status: context.fileRetentionStatusProvider?.(),
         });
+        return;
+      }
+
+      const backupRoute = matchBackupOperationsRoute(path);
+      if (backupRoute && req.method === 'POST') {
+        if (!isLoopbackAddress(req.socket?.remoteAddress)) {
+          sendJson(403, { error: 'forbidden' });
+          return;
+        }
+
+        const url = new URL(req.url ?? '', 'http://localhost');
+        const actorResolution = await resolveOperationsActor(
+          context,
+          url.searchParams.get('memberId'),
+        );
+
+        if (!actorResolution.ok) {
+          if (actorResolution.audit) {
+            await writeOperationalAudit(context, {
+              action: backupRoute.kind === 'create' ? 'backup_create' : 'backup_restore',
+              actorMemberId: actorResolution.audit.memberId,
+              outcome: 'denied',
+              details: {
+                reason: actorResolution.audit.reason,
+              },
+            });
+          }
+
+          sendJson(actorResolution.statusCode, actorResolution.payload);
+          return;
+        }
+
+        const actor = actorResolution.actor;
+
+        try {
+          if (backupRoute.kind === 'create') {
+            const backupId = url.searchParams.get('backupId')?.trim() || undefined;
+            const includePaths = parseCsvQuery(url.searchParams.get('includePaths'));
+            const now = parseDateQuery(url.searchParams.get('now'));
+
+            const backup = await createRuntimeBackup({
+              rootDir: context.haloHome.root,
+              backupId,
+              includePaths,
+              now,
+            });
+
+            await writeOperationalAudit(context, {
+              action: 'backup_create',
+              actorMemberId: actor.memberId,
+              targetBackupId: backup.backupId,
+              outcome: 'allowed',
+              details: {
+                includedPaths: backup.includedPaths,
+                fileCount: backup.fileCount,
+              },
+            });
+
+            sendJson(200, backup);
+            return;
+          }
+
+          const backupId = url.searchParams.get('backupId')?.trim() ?? '';
+          if (!backupId) {
+            sendJson(400, { error: 'missing_backup_id' });
+            return;
+          }
+
+          const restorePaths = parseCsvQuery(url.searchParams.get('restorePaths'));
+
+          const restore = await restoreRuntimeBackup({
+            rootDir: context.haloHome.root,
+            backupId,
+            restorePaths,
+          });
+
+          await writeOperationalAudit(context, {
+            action: 'backup_restore',
+            actorMemberId: actor.memberId,
+            targetBackupId: restore.backupId,
+            outcome: 'allowed',
+            details: {
+              restoredPaths: restore.restoredPaths,
+            },
+          });
+
+          sendJson(200, restore);
+          return;
+        } catch (err) {
+          await writeOperationalAudit(context, {
+            action: backupRoute.kind === 'create' ? 'backup_create' : 'backup_restore',
+            actorMemberId: actor.memberId,
+            outcome: 'failed',
+            details: {
+              message: err instanceof Error ? err.message : String(err),
+            },
+          });
+
+          sendJson(500, {
+            error: 'backup_operation_failed',
+            message: err instanceof Error ? err.message : String(err),
+          });
+          return;
+        }
+      }
+
+      const laneMemoryRoute = matchLaneMemoryRoute(path);
+      if (laneMemoryRoute) {
+        const allowedMethod = laneMethodFromRouteKind(laneMemoryRoute.kind);
+        if (req.method !== allowedMethod) {
+          res.setHeader('allow', allowedMethod);
+          sendJson(405, {
+            error: 'method_not_allowed',
+            allowed: [allowedMethod],
+          });
+          return;
+        }
+
+        if (!isLoopbackAddress(req.socket?.remoteAddress)) {
+          sendJson(403, { error: 'forbidden' });
+          return;
+        }
+
+        const url = new URL(req.url ?? '', 'http://localhost');
+        const actorResolution = await resolveOperationsActor(
+          context,
+          url.searchParams.get('memberId'),
+        );
+
+        if (!actorResolution.ok) {
+          if (actorResolution.audit) {
+            await writeOperationalAudit(context, {
+              action: laneActionFromRouteKind(laneMemoryRoute.kind),
+              actorMemberId: actorResolution.audit.memberId,
+              targetLaneId: laneMemoryRoute.laneId,
+              outcome: 'denied',
+              details: {
+                reason: actorResolution.audit.reason,
+              },
+            });
+          }
+
+          sendJson(actorResolution.statusCode, actorResolution.payload);
+          return;
+        }
+
+        const actor = actorResolution.actor;
+
+        if (laneMemoryRoute.kind === 'export') {
+          const exported = await exportLaneMemory({
+            rootDir: context.haloHome.root,
+            laneId: laneMemoryRoute.laneId,
+          });
+
+          await writeOperationalAudit(context, {
+            action: 'lane_export',
+            actorMemberId: actor.memberId,
+            targetLaneId: laneMemoryRoute.laneId,
+            outcome: 'allowed',
+            details: {
+              dailyFileCount: exported.dailyFiles.length,
+            },
+          });
+
+          sendJson(200, exported);
+          return;
+        }
+
+        if (laneMemoryRoute.kind === 'delete') {
+          const deleted = await deleteLaneMemory({
+            rootDir: context.haloHome.root,
+            laneId: laneMemoryRoute.laneId,
+          });
+
+          await writeOperationalAudit(context, {
+            action: 'lane_delete',
+            actorMemberId: actor.memberId,
+            targetLaneId: laneMemoryRoute.laneId,
+            outcome: 'allowed',
+            details: {
+              deleted: deleted.deleted,
+              trashPath: deleted.trashPath,
+            },
+          });
+
+          sendJson(200, deleted);
+          return;
+        }
+
+        const overrideDaysRaw = url.searchParams.get('retentionDays');
+        const overrideDays =
+          overrideDaysRaw === null
+            ? null
+            : Number.parseInt(overrideDaysRaw, 10);
+
+        const configuredDays = resolveLaneRetentionDays(
+          actor.family,
+          laneMemoryRoute.laneId,
+        );
+
+        const retentionDays =
+          overrideDays !== null && Number.isFinite(overrideDays)
+            ? overrideDays
+            : configuredDays;
+
+        if (!retentionDays || retentionDays <= 0) {
+          sendJson(409, {
+            error: 'lane_retention_policy_missing',
+          });
+          return;
+        }
+
+        const dryRun = parseBooleanQuery(url.searchParams.get('dryRun'), false);
+        const now = parseDateQuery(url.searchParams.get('now'));
+
+        const summary = await runLaneRetention({
+          rootDir: context.haloHome.root,
+          laneId: laneMemoryRoute.laneId,
+          retentionDays,
+          dryRun,
+          now,
+        });
+
+        await writeOperationalAudit(context, {
+          action: 'lane_retention',
+          actorMemberId: actor.memberId,
+          targetLaneId: laneMemoryRoute.laneId,
+          outcome: 'allowed',
+          details: {
+            retentionDays,
+            dryRun,
+            deletedCount: summary.deletedFiles.length,
+          },
+        });
+
+        sendJson(200, summary);
         return;
       }
 

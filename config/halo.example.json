@@ -54,6 +54,17 @@
       "policyPreset": "exclude_children"
     }
   },
+  "controlPlane": {
+    "activeProfile": "legacy",
+    "profiles": {
+      "legacy": {
+        "path": "config/family.json"
+      },
+      "v2": {
+        "path": "config/control-plane.json"
+      }
+    }
+  },
   "tools": {
     "shell": {
       "enabled": false,

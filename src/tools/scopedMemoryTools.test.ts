@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { getScopedDailyPath, getScopedLongTermPath } from '../memory/scopedMemory.js';
+import { getLaneLongTermPath, getLaneDailyPath } from '../memory/laneMemory.js';
 import { readScopedMemory } from './scopedMemoryTools.js';
 
 describe('scopedMemoryTools', () => {
@@ -35,5 +36,39 @@ describe('scopedMemoryTools', () => {
     const yesterday = await readScopedMemory({ rootDir, scopeId, target: 'yesterday', now: () => now });
     expect(yesterday.path).toBe(yesterdayPath);
     expect(yesterday.contents).toBe('yesterday note');
+  });
+
+  it('reads from lane paths when laneIds are provided', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'lane-memory-tool-'));
+    const laneIds = ['parent_private:wags', 'family_shared'];
+    const now = new Date('2026-02-03T12:00:00Z');
+
+    for (const laneId of laneIds) {
+      const longTermPath = getLaneLongTermPath({ rootDir, laneId });
+      const todayPath = getLaneDailyPath({ rootDir, laneId }, now);
+      await mkdir(path.dirname(longTermPath), { recursive: true });
+      await writeFile(longTermPath, `long term for ${laneId}`, 'utf8');
+      await writeFile(todayPath, `today for ${laneId}`, 'utf8');
+    }
+
+    const longTerm = await readScopedMemory({
+      rootDir,
+      scopeId: 'telegram:dm:wags',
+      target: 'long_term',
+      laneIds,
+      now: () => now,
+    });
+    expect(longTerm.contents).toContain('long term for parent_private:wags');
+    expect(longTerm.contents).toContain('long term for family_shared');
+
+    const today = await readScopedMemory({
+      rootDir,
+      scopeId: 'telegram:dm:wags',
+      target: 'today',
+      laneIds,
+      now: () => now,
+    });
+    expect(today.contents).toContain('today for parent_private:wags');
+    expect(today.contents).toContain('today for family_shared');
   });
 });

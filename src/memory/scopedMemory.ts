@@ -19,6 +19,10 @@ function sanitize(text: string): string {
     .replace(/\b\d{9,}:[A-Za-z0-9_-]{10,}\b/g, '[REDACTED_TELEGRAM_TOKEN]');
 }
 
+function normalizeBullet(line: string): string {
+  return line.trim().replace(/^[-*]\s+/, '').trim().toLowerCase();
+}
+
 function scopeDir(paths: ScopedMemoryPaths): string {
   const hashed = hashSessionId(paths.scopeId);
   return join(paths.rootDir, 'memory', 'scopes', hashed);

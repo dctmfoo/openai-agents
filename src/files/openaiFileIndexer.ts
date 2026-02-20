@@ -1,4 +1,5 @@
 import OpenAI, { toFile } from 'openai';
+import { buildLaneStorageMetadata } from '../memory/laneTopology.js';
 import { hashSessionId } from '../sessions/sessionHash.js';
 import {
   getScopeVectorStoreId,
@@ -35,7 +36,7 @@ type ToFileLike = (
   options?: { type?: string; lastModified?: number },
 ) => Promise<unknown>;
 
-export type IndexTelegramDocumentInput = {
+type IndexTelegramDocumentInput = {
   rootDir: string;
   scopeId: string;
   uploadedBy: string;
@@ -47,6 +48,8 @@ export type IndexTelegramDocumentInput = {
   bytes: Uint8Array;
   maxFilesPerScope: number;
   pollIntervalMs: number;
+  laneId?: string;
+  policyVersion?: string;
 };
 
 export type IndexTelegramDocumentResult =
@@ -188,11 +191,25 @@ function buildFailedIndexMessage(status: VectorStoreFileStatus, lastError?: stri
   return `OpenAI indexing did not complete (status: ${status}).`;
 }
 
+function buildDocumentStorageMetadata(input: IndexTelegramDocumentInput) {
+  const laneId = input.laneId?.trim() || 'system_audit';
+  const policyVersion = input.policyVersion?.trim() || 'unknown';
+
+  return buildLaneStorageMetadata({
+    laneId,
+    ownerMemberId: input.uploadedBy,
+    scopeId: input.scopeId,
+    policyVersion,
+    artifactType: 'document',
+  });
+}
+
 export async function indexTelegramDocument(
   input: IndexTelegramDocumentInput,
   deps: IndexTelegramDocumentDeps = {},
 ): Promise<IndexTelegramDocumentResult> {
   const nowMs = deps.nowMs ?? (() => Date.now());
+  const storageMetadata = buildDocumentStorageMetadata(input);
 
   return await withScopeLock(input.scopeId, async () => {
     const registry = await readScopeFileRegistry({
@@ -306,6 +323,7 @@ export async function indexTelegramDocument(
             lastError: errorMessage,
             uploadedBy: input.uploadedBy,
             uploadedAtMs: nowMs(),
+            storageMetadata,
           },
           nowMs(),
         );
@@ -334,6 +352,7 @@ export async function indexTelegramDocument(
             lastError: missingIdMessage,
             uploadedBy: input.uploadedBy,
             uploadedAtMs: nowMs(),
+            storageMetadata,
           },
           nowMs(),
         );
@@ -358,6 +377,7 @@ export async function indexTelegramDocument(
           lastError: null,
           uploadedBy: input.uploadedBy,
           uploadedAtMs: nowMs(),
+          storageMetadata,
         },
         nowMs(),
       );
@@ -384,6 +404,7 @@ export async function indexTelegramDocument(
             lastError: message,
             uploadedBy: input.uploadedBy,
             uploadedAtMs: nowMs(),
+            storageMetadata,
           },
           nowMs(),
         );

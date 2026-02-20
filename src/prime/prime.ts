@@ -1,6 +1,8 @@
 import { Agent, run, type AgentInputItem } from '@openai/agents';
 import process from 'node:process';
-import { loadScopedContextFiles } from '../memory/scopedMemory.js';
+import { buildScopeCitationPolicy, applyScopeCitationPolicy } from '../files/citationPolicy.js';
+import { readScopeFileRegistry } from '../files/scopeFileRegistry.js';
+import { loadLaneContextFiles } from '../memory/laneMemory.js';
 import type { ToolsConfig } from '../runtime/haloConfig.js';
 import { defaultSessionStore, type SessionStore } from '../sessions/sessionStore.js';
 import { buildPrimeTools } from '../tools/registry.js';
@@ -8,7 +10,7 @@ import { TOOL_NAMES, type ToolName } from '../tools/toolNames.js';
 import { filterResponse } from '../policies/contentFilter.js';
 import type { PrimeContext } from './types.js';
 
-export type PrimeRunOptions = {
+type PrimeRunOptions = {
   /** Stable identifier for the current speaker (Telegram user id, etc.) */
   userId?: string;
   /** Stable identifier for the conversation scope (e.g. Telegram chat id). */
@@ -21,6 +23,8 @@ export type PrimeRunOptions = {
   role?: 'parent' | 'child';
   ageGroup?: 'child' | 'teen' | 'young_adult';
   scopeType?: 'dm' | 'parents_group';
+  /** Model override from policy. Takes precedence over PRIME_MODEL env var. */
+  model?: string;
   fileSearchEnabled?: boolean;
   fileSearchVectorStoreId?: string;
   fileSearchIncludeResults?: boolean;
@@ -28,6 +32,9 @@ export type PrimeRunOptions = {
   contextMode?: 'full' | 'light';
   disabledToolNames?: ToolName[];
   toolsConfig?: ToolsConfig;
+  allowedMemoryReadLanes?: string[];
+  allowedMemoryReadScopes?: string[];
+  allowedMemoryWriteLanes?: string[];
   /**
    * Skip session-backed history for this run.
    * Useful for large multimodal payloads that should not bloat long-lived sessions.
@@ -77,6 +84,27 @@ const buildToolInstructions = (toolNames: string[]) => {
   return instructions;
 };
 
+export const resolvePrimeModel = (
+  toolNames: string[],
+  opts: { policyModel?: string } = {},
+): string | undefined => {
+  if (opts.policyModel) {
+    return opts.policyModel;
+  }
+
+  const explicitModel = process.env.PRIME_MODEL?.trim();
+  if (explicitModel) {
+    return explicitModel;
+  }
+
+  if (toolNames.includes(TOOL_NAMES.shell)) {
+    const shellModel = process.env.PRIME_SHELL_MODEL?.trim();
+    return shellModel || 'gpt-5.1';
+  }
+
+  return undefined;
+};
+
 type PrimeInstructionOptions = {
   role?: 'parent' | 'child';
   ageGroup?: 'child' | 'teen' | 'young_adult';
@@ -124,10 +152,13 @@ export function buildPrimeInstructions(options: PrimeInstructionOptions): string
 }
 
 async function makePrimeAgent(context: PrimeContext) {
-  const ctx = await loadScopedContextFiles({
+  const laneFilter = context.allowedMemoryReadLanes ?? [];
+
+  const ctx = await loadLaneContextFiles({
     rootDir: context.rootDir,
-    scopeId: context.scopeId,
+    laneIds: laneFilter,
   });
+
   const includeMemoryContext = context.contextMode !== 'light';
 
   const contextBlock = [
@@ -144,7 +175,9 @@ async function makePrimeAgent(context: PrimeContext) {
     .join('\n');
 
   const tools = buildPrimeTools(context);
-  const toolInstructions = buildToolInstructions(tools.map((tool) => tool.name));
+  const toolNames = tools.map((tool) => tool.name);
+  const toolInstructions = buildToolInstructions(toolNames);
+  const model = resolvePrimeModel(toolNames, { policyModel: context.model });
   const modelSettings =
     context.contextMode === 'light'
       ? { maxTokens: 220 }
@@ -158,12 +191,50 @@ async function makePrimeAgent(context: PrimeContext) {
       toolInstructions,
       contextBlock,
     }),
+    ...(model ? { model } : {}),
     tools,
     ...(modelSettings ? { modelSettings } : {}),
   });
 }
 
-export type PrimeInput = string | AgentInputItem[];
+async function applyFileCitationPolicy(
+  output: string,
+  context: PrimeContext,
+): Promise<string> {
+  if (!context.fileSearchEnabled) {
+    return output;
+  }
+
+  const registry = await readScopeFileRegistry({
+    rootDir: context.rootDir,
+    scopeId: context.scopeId,
+  });
+
+  if (!registry || registry.files.length === 0) {
+    return output;
+  }
+
+  const allowedScopeIds =
+    context.allowedMemoryReadScopes && context.allowedMemoryReadScopes.length > 0
+      ? context.allowedMemoryReadScopes
+      : [context.scopeId];
+
+  const policy = buildScopeCitationPolicy({
+    files: registry.files.map((file) => {
+      return {
+        filename: file.filename,
+        storageMetadata: file.storageMetadata,
+      };
+    }),
+    allowedLaneIds: context.allowedMemoryReadLanes ?? [],
+    allowedScopeIds,
+  });
+
+  const applied = applyScopeCitationPolicy(output, policy);
+  return applied.output;
+}
+
+type PrimeInput = string | AgentInputItem[];
 
 export async function runPrime(input: PrimeInput, opts: PrimeRunOptions = {}) {
   const scopeId = opts.scopeId ?? `default:${opts.channel ?? 'unknown'}:${opts.userId ?? 'unknown'}`;
@@ -179,6 +250,7 @@ export async function runPrime(input: PrimeInput, opts: PrimeRunOptions = {}) {
     channel: opts.channel,
     role,
     ageGroup: opts.ageGroup,
+    model: opts.model,
     scopeType,
     contextMode: opts.contextMode,
     fileSearchEnabled: opts.fileSearchEnabled,
@@ -187,6 +259,9 @@ export async function runPrime(input: PrimeInput, opts: PrimeRunOptions = {}) {
     fileSearchMaxNumResults: opts.fileSearchMaxNumResults,
     disabledToolNames: opts.disabledToolNames,
     toolsConfig: opts.toolsConfig,
+    allowedMemoryReadLanes: opts.allowedMemoryReadLanes,
+    allowedMemoryReadScopes: opts.allowedMemoryReadScopes,
+    allowedMemoryWriteLanes: opts.allowedMemoryWriteLanes,
   };
 
   const agent = await makePrimeAgent(context);
@@ -206,8 +281,15 @@ export async function runPrime(input: PrimeInput, opts: PrimeRunOptions = {}) {
     context.ageGroup ?? 'child',
   );
 
+  let finalOutput = filtered.filtered;
+  try {
+    finalOutput = await applyFileCitationPolicy(filtered.filtered, context);
+  } catch {
+    finalOutput = filtered.filtered;
+  }
+
   return {
-    finalOutput: filtered.filtered,
+    finalOutput,
     raw: result,
   };
 }

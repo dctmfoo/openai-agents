@@ -7,6 +7,7 @@ import { getHaloHome } from '../runtime/haloHome.js';
 import { loadHaloConfig } from '../runtime/haloConfig.js';
 import { reportStartupError } from '../runtime/startupErrors.js';
 import { SessionStore } from '../sessions/sessionStore.js';
+import { createRuntimeLogger, serializeError } from '../utils/runtimeLogger.js';
 
 // Durable runtime state should live outside the repo.
 const haloHome = getHaloHome(process.env);
@@ -15,6 +16,11 @@ const haloHome = getHaloHome(process.env);
 const logDir = process.env.LOG_DIR || path.join(haloHome, 'logs');
 
 const start = async () => {
+  const logger = createRuntimeLogger({
+    logDir,
+    component: 'gateway.start',
+  });
+
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
     throw new Error('Missing TELEGRAM_BOT_TOKEN in environment');
@@ -41,7 +47,14 @@ const start = async () => {
     throw new Error('Invalid gateway.port in HALO_HOME/config.json');
   }
 
-  console.log('halo (gateway) starting…');
+  logger.info('starting gateway runtime', {
+    haloHome,
+    adminHost,
+    adminPort,
+    fileMemoryEnabled: haloConfig.fileMemory.enabled,
+    shellToolEnabled: haloConfig.tools.shell.enabled,
+  });
+
   await startGateway({
     telegram: {
       token,
@@ -68,6 +81,13 @@ const start = async () => {
 };
 
 start().catch((err) => {
+  const logger = createRuntimeLogger({
+    logDir,
+    component: 'gateway.start',
+  });
+  logger.error('gateway startup failed', {
+    error: serializeError(err),
+  });
   reportStartupError(err, { mode: 'gateway', haloHome, logDir });
   process.exit(1);
 });
