@@ -1,14 +1,11 @@
 import { appendFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import type { OperationalAction } from './incidentLog.js';
+
 export type OperationalAuditEventInput = {
   rootDir: string;
-  action:
-    | 'lane_export'
-    | 'lane_delete'
-    | 'lane_retention'
-    | 'backup_create'
-    | 'backup_restore';
+  action: OperationalAction;
   actorMemberId: string;
   targetLaneId?: string;
   targetBackupId?: string;

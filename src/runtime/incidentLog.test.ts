@@ -3,9 +3,25 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { appendIncidentEvent } from './incidentLog.js';
+import { appendIncidentEvent, type OperationalAction } from './incidentLog.js';
 
 describe('incidentLog', () => {
+  it('OperationalAction includes lane operations', () => {
+    const laneExport: OperationalAction = 'lane_export';
+    const laneDelete: OperationalAction = 'lane_delete';
+    const laneRetention: OperationalAction = 'lane_retention';
+    const backupCreate: OperationalAction = 'backup_create';
+    const backupRestore: OperationalAction = 'backup_restore';
+
+    expect([laneExport, laneDelete, laneRetention, backupCreate, backupRestore]).toEqual([
+      'lane_export',
+      'lane_delete',
+      'lane_retention',
+      'backup_create',
+      'backup_restore',
+    ]);
+  });
+
   it('writes incident events to jsonl log', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'incident-log-'));
 

@@ -36,7 +36,7 @@ type ToFileLike = (
   options?: { type?: string; lastModified?: number },
 ) => Promise<unknown>;
 
-export type IndexTelegramDocumentInput = {
+type IndexTelegramDocumentInput = {
   rootDir: string;
   scopeId: string;
   uploadedBy: string;

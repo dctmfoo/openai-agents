@@ -11,7 +11,282 @@ import {
   revokeOnboardingInvite,
 } from './onboardingFlow.js';
 
+const makeV2Config = () => ({
+  schemaVersion: 2,
+  policyVersion: 'v2-test',
+  familyId: 'default',
+  activeProfileId: 'parent_default',
+  profiles: [
+    {
+      profileId: 'parent_default',
+      role: 'parent',
+      capabilityTierId: 'standard',
+      memoryLanePolicyId: 'default',
+      modelPolicyId: 'default',
+      safetyPolicyId: 'default',
+    },
+  ],
+  members: [
+    {
+      memberId: 'wags',
+      displayName: 'Wags',
+      role: 'parent',
+      profileId: 'parent_default',
+      telegramUserIds: [456],
+    },
+  ],
+  scopes: [
+    {
+      scopeId: 'scope-dm-wags',
+      scopeType: 'dm',
+      telegramChatId: null,
+    },
+  ],
+  capabilityTiers: {
+    standard: ['chat.respond'],
+  },
+  memoryLanePolicies: {
+    default: { readLanes: ['family_shared'], writeLanes: ['parent_private:wags'] },
+  },
+  modelPolicies: {
+    default: { tier: 'standard', model: 'gpt-4o', reason: 'default' },
+  },
+  safetyPolicies: {
+    default: { riskLevel: 'low', escalationPolicyId: 'default' },
+  },
+});
+
 describe('onboardingFlow', () => {
+  it('bootstraps parent onboarding with v2 config and preserves raw v2 format on disk', async () => {
+    const haloHome = await mkdtemp(join(tmpdir(), 'halo-onboarding-v2-'));
+    const configDir = join(haloHome, 'config');
+    await mkdir(configDir, { recursive: true });
+
+    const v2Config = makeV2Config();
+    await writeFile(
+      join(configDir, 'family.json'),
+      JSON.stringify(v2Config, null, 2),
+      'utf8',
+    );
+
+    const result = await bootstrapParentOnboarding({
+      haloHome,
+      householdId: 'household-default',
+      householdDisplayName: 'Default Household',
+      ownerMemberId: 'wags',
+      ownerTelegramUserId: 456,
+      ownerProfileId: 'parent_default',
+      now: '2026-02-17T10:00:00.000Z',
+    });
+
+    expect(result.outcome).toBe('bootstrapped');
+
+    const persisted = await loadFamilyConfig({ haloHome });
+    expect(persisted.schemaVersion).toBe(2);
+    expect(persisted.onboarding?.household.ownerMemberId).toBe('wags');
+    expect(persisted.onboarding?.memberLinks).toEqual([
+      {
+        memberId: 'wags',
+        role: 'parent',
+        profileId: 'parent_default',
+        telegramUserId: 456,
+        linkedAt: '2026-02-17T10:00:00.000Z',
+        linkedByMemberId: 'wags',
+      },
+    ]);
+
+    const rawContent = JSON.parse(
+      await (await import('node:fs/promises')).readFile(join(configDir, 'family.json'), 'utf8'),
+    );
+    expect(rawContent.schemaVersion).toBe(2);
+    expect(rawContent.policyVersion).toBe('v2-test');
+    expect(rawContent.onboarding).toBeDefined();
+  });
+
+  it('persists v2 onboarding updates to the active control-plane profile path', async () => {
+    const haloHome = await mkdtemp(join(tmpdir(), 'halo-onboarding-v2-profile-'));
+    const configDir = join(haloHome, 'config');
+    const controlPlanePath = join(configDir, 'control-plane.json');
+    await mkdir(configDir, { recursive: true });
+
+    await writeFile(
+      join(haloHome, 'config.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          controlPlane: {
+            activeProfile: 'v2',
+            profiles: {
+              v2: {
+                path: 'config/control-plane.json',
+              },
+            },
+          },
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+
+    await writeFile(
+      controlPlanePath,
+      JSON.stringify(makeV2Config(), null, 2),
+      'utf8',
+    );
+
+    const result = await bootstrapParentOnboarding({
+      haloHome,
+      householdId: 'household-default',
+      householdDisplayName: 'Default Household',
+      ownerMemberId: 'wags',
+      ownerTelegramUserId: 456,
+      ownerProfileId: 'parent_default',
+      now: '2026-02-17T10:00:00.000Z',
+    });
+
+    expect(result.outcome).toBe('bootstrapped');
+
+    const persisted = await loadFamilyConfig({ haloHome });
+    expect(persisted.schemaVersion).toBe(2);
+    expect(persisted.onboarding?.household.ownerMemberId).toBe('wags');
+
+    const rawContent = JSON.parse(
+      await (await import('node:fs/promises')).readFile(controlPlanePath, 'utf8'),
+    );
+    expect(rawContent.schemaVersion).toBe(2);
+    expect(rawContent.onboarding?.household?.ownerMemberId).toBe('wags');
+  });
+
+  it('issues invite and persists into v2 config', async () => {
+    const haloHome = await mkdtemp(join(tmpdir(), 'halo-onboarding-v2-invite-'));
+    const configDir = join(haloHome, 'config');
+    await mkdir(configDir, { recursive: true });
+
+    const v2Config = makeV2Config();
+    await writeFile(
+      join(configDir, 'family.json'),
+      JSON.stringify(v2Config, null, 2),
+      'utf8',
+    );
+
+    await bootstrapParentOnboarding({
+      haloHome,
+      householdId: 'household-default',
+      householdDisplayName: 'Default Household',
+      ownerMemberId: 'wags',
+      ownerTelegramUserId: 456,
+      ownerProfileId: 'parent_default',
+      now: '2026-02-17T10:00:00.000Z',
+    });
+
+    const issued = await issueOnboardingInvite({
+      haloHome,
+      inviteId: 'invite-child-1',
+      issuedByMemberId: 'wags',
+      role: 'child',
+      profileId: 'young_child',
+      issuedAt: '2026-02-17T10:10:00.000Z',
+      expiresAt: '2026-02-18T10:10:00.000Z',
+    });
+
+    expect(issued.outcome).toBe('issued');
+
+    const persisted = await loadFamilyConfig({ haloHome });
+    expect(persisted.schemaVersion).toBe(2);
+    expect(persisted.onboarding?.invites).toHaveLength(1);
+    expect(persisted.onboarding?.invites[0]).toEqual(
+      expect.objectContaining({
+        inviteId: 'invite-child-1',
+        state: 'issued',
+        profileId: 'young_child',
+      }),
+    );
+
+    const rawContent = JSON.parse(
+      await (await import('node:fs/promises')).readFile(join(configDir, 'family.json'), 'utf8'),
+    );
+    expect(rawContent.schemaVersion).toBe(2);
+    expect(rawContent.policyVersion).toBe('v2-test');
+  });
+
+  it('accepts invite round-trip through v2 config - new member gets profileId, ageGroup stripped on disk', async () => {
+    const haloHome = await mkdtemp(join(tmpdir(), 'halo-onboarding-v2-accept-'));
+    const configDir = join(haloHome, 'config');
+    await mkdir(configDir, { recursive: true });
+
+    const v2Config = {
+      ...makeV2Config(),
+      profiles: [
+        ...makeV2Config().profiles,
+        {
+          profileId: 'young_child',
+          role: 'child',
+          capabilityTierId: 'standard',
+          memoryLanePolicyId: 'default',
+          modelPolicyId: 'default',
+          safetyPolicyId: 'default',
+        },
+      ],
+    };
+    await writeFile(
+      join(configDir, 'family.json'),
+      JSON.stringify(v2Config, null, 2),
+      'utf8',
+    );
+
+    await bootstrapParentOnboarding({
+      haloHome,
+      householdId: 'household-default',
+      householdDisplayName: 'Default Household',
+      ownerMemberId: 'wags',
+      ownerTelegramUserId: 456,
+      ownerProfileId: 'parent_default',
+      now: '2026-02-17T10:00:00.000Z',
+    });
+
+    await issueOnboardingInvite({
+      haloHome,
+      inviteId: 'invite-child-1',
+      issuedByMemberId: 'wags',
+      role: 'child',
+      profileId: 'young_child',
+      issuedAt: '2026-02-17T10:10:00.000Z',
+      expiresAt: '2026-02-18T10:10:00.000Z',
+    });
+
+    const accepted = await acceptOnboardingInvite({
+      haloHome,
+      inviteId: 'invite-child-1',
+      memberId: 'kid',
+      displayName: 'Kid',
+      telegramUserId: 999,
+      linkedByMemberId: 'wags',
+      acceptedAt: '2026-02-17T10:11:00.000Z',
+      ageGroup: 'child',
+    });
+
+    expect(accepted.outcome).toBe('joined');
+
+    const persisted = await loadFamilyConfig({ haloHome });
+    expect(persisted.schemaVersion).toBe(2);
+
+    const kidLink = persisted.onboarding?.memberLinks.find((l) => l.memberId === 'kid');
+    expect(kidLink?.profileId).toBe('young_child');
+
+    const rawContent = JSON.parse(
+      await (await import('node:fs/promises')).readFile(join(configDir, 'family.json'), 'utf8'),
+    );
+    expect(rawContent.schemaVersion).toBe(2);
+    expect(rawContent.policyVersion).toBe('v2-test');
+    const rawKid = rawContent.members?.find(
+      (m: Record<string, unknown>) => m.memberId === 'kid',
+    );
+    expect(rawKid).toBeDefined();
+    expect(rawKid.ageGroup).toBeUndefined();
+    expect(rawKid.profileId).toBe('young_child');
+  });
+
   it('persists parent bootstrap onboarding state', async () => {
     const haloHome = await mkdtemp(join(tmpdir(), 'halo-onboarding-'));
     const configDir = join(haloHome, 'config');

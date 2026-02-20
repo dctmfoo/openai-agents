@@ -4,7 +4,7 @@ import path from 'node:path';
 import { getHaloHome } from '../runtime/haloHome.js';
 import { hashSessionId } from './sessionHash.js';
 
-export type TranscriptStoreOptions = {
+type TranscriptStoreOptions = {
   sessionId: string;
   /** Optional override for tests. */
   baseDir?: string;

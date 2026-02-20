@@ -14,7 +14,7 @@ export type TelegramPolicyIntent = {
   command?: string;
 };
 
-export type TelegramPolicyInput = {
+type TelegramPolicyInput = {
   chat: TelegramChat;
   fromId?: number | string;
   family: FamilyConfig;
@@ -42,6 +42,7 @@ export type TelegramPolicyDecision = {
   allowedCapabilities: string[];
   allowedMemoryReadLanes: string[];
   allowedMemoryWriteLanes: string[];
+  modelPlan: DecisionEnvelope['modelPlan'];
   rationale: string[];
   policyVersion: string;
 };
@@ -138,6 +139,7 @@ export function resolveTelegramPolicy(input: TelegramPolicyInput): TelegramPolic
     allowedCapabilities: [...envelope.allowedCapabilities],
     allowedMemoryReadLanes: [...envelope.allowedMemoryReadLanes],
     allowedMemoryWriteLanes: [...envelope.allowedMemoryWriteLanes],
+    modelPlan: { ...envelope.modelPlan },
     rationale: [...envelope.rationale],
     policyVersion: envelope.policyVersion,
   };

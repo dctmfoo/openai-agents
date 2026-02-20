@@ -3,9 +3,16 @@ import { join } from 'node:path';
 
 type IncidentSeverity = 'warning' | 'critical';
 
-export type IncidentEventAction = 'backup_create' | 'backup_restore';
+export type OperationalAction =
+  | 'lane_export'
+  | 'lane_delete'
+  | 'lane_retention'
+  | 'backup_create'
+  | 'backup_restore';
 
-export type IncidentEventInput = {
+export type IncidentEventAction = OperationalAction;
+
+type IncidentEventInput = {
   rootDir: string;
   action: IncidentEventAction;
   severity: IncidentSeverity;

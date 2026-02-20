@@ -12,7 +12,7 @@ import { runDistillation } from '../memory/distillationRunner.js';
 // Injectable indirection for tests (ESM named imports are hard to mock reliably).
 export const distillationDeps = { runDistillation };
 
-export type DistillationConfig = {
+type DistillationConfig = {
   enabled: boolean;
   /** Trigger distillation after this many appended items. */
   everyNItems: number;

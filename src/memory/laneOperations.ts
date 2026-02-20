@@ -10,27 +10,27 @@ type LaneOperationPaths = {
   laneId: string;
 };
 
-export type ExportedLaneDailyFile = {
+type ExportedLaneDailyFile = {
   date: string;
   path: string;
   content: string;
 };
 
-export type ExportedLaneMemory = {
+type ExportedLaneMemory = {
   laneId: string;
   longTermPath: string;
   longTerm: string;
   dailyFiles: ExportedLaneDailyFile[];
 };
 
-export type LaneRetentionResult = {
+type LaneRetentionResult = {
   laneId: string;
   retentionDays: number;
   deletedFiles: string[];
   keptFiles: string[];
 };
 
-export type DeleteLaneMemoryResult = {
+type DeleteLaneMemoryResult = {
   laneId: string;
   deleted: boolean;
   sourcePath: string;

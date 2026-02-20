@@ -14,7 +14,7 @@ type BuildScopeCitationPolicyInput = {
   allowedScopeIds: string[];
 };
 
-export type ScopeCitationPolicy = {
+type ScopeCitationPolicy = {
   disallowedFilenames: string[];
 };
 
@@ -92,15 +92,23 @@ export function buildScopeCitationPolicy(
   };
 }
 
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function outputMentionsFilename(output: string, filename: string): boolean {
-  const normalizedOutput = output.toLowerCase();
   const normalizedFilename = filename.trim().toLowerCase();
 
   if (!normalizedFilename) {
     return false;
   }
 
-  return normalizedOutput.includes(normalizedFilename);
+  const pattern = new RegExp(
+    `(?:^|[\\s/\\\\,;:"'(\\[{.!?])${escapeRegex(normalizedFilename)}(?:$|[\\s/\\\\,;:"'\\])}.!?])`,
+    'i',
+  );
+
+  return pattern.test(output);
 }
 
 export function applyScopeCitationPolicy(

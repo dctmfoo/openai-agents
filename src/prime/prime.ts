@@ -3,7 +3,6 @@ import process from 'node:process';
 import { buildScopeCitationPolicy, applyScopeCitationPolicy } from '../files/citationPolicy.js';
 import { readScopeFileRegistry } from '../files/scopeFileRegistry.js';
 import { loadLaneContextFiles } from '../memory/laneMemory.js';
-import { loadScopedContextFiles } from '../memory/scopedMemory.js';
 import type { ToolsConfig } from '../runtime/haloConfig.js';
 import { defaultSessionStore, type SessionStore } from '../sessions/sessionStore.js';
 import { buildPrimeTools } from '../tools/registry.js';
@@ -11,7 +10,7 @@ import { TOOL_NAMES, type ToolName } from '../tools/toolNames.js';
 import { filterResponse } from '../policies/contentFilter.js';
 import type { PrimeContext } from './types.js';
 
-export type PrimeRunOptions = {
+type PrimeRunOptions = {
   /** Stable identifier for the current speaker (Telegram user id, etc.) */
   userId?: string;
   /** Stable identifier for the conversation scope (e.g. Telegram chat id). */
@@ -24,6 +23,8 @@ export type PrimeRunOptions = {
   role?: 'parent' | 'child';
   ageGroup?: 'child' | 'teen' | 'young_adult';
   scopeType?: 'dm' | 'parents_group';
+  /** Model override from policy. Takes precedence over PRIME_MODEL env var. */
+  model?: string;
   fileSearchEnabled?: boolean;
   fileSearchVectorStoreId?: string;
   fileSearchIncludeResults?: boolean;
@@ -33,6 +34,7 @@ export type PrimeRunOptions = {
   toolsConfig?: ToolsConfig;
   allowedMemoryReadLanes?: string[];
   allowedMemoryReadScopes?: string[];
+  allowedMemoryWriteLanes?: string[];
   /**
    * Skip session-backed history for this run.
    * Useful for large multimodal payloads that should not bloat long-lived sessions.
@@ -82,7 +84,14 @@ const buildToolInstructions = (toolNames: string[]) => {
   return instructions;
 };
 
-const resolvePrimeModel = (toolNames: string[]): string | undefined => {
+export const resolvePrimeModel = (
+  toolNames: string[],
+  opts: { policyModel?: string } = {},
+): string | undefined => {
+  if (opts.policyModel) {
+    return opts.policyModel;
+  }
+
   const explicitModel = process.env.PRIME_MODEL?.trim();
   if (explicitModel) {
     return explicitModel;
@@ -144,30 +153,20 @@ export function buildPrimeInstructions(options: PrimeInstructionOptions): string
 
 async function makePrimeAgent(context: PrimeContext) {
   const laneFilter = context.allowedMemoryReadLanes ?? [];
-  const hasLaneFilter = laneFilter.length > 0;
 
-  const ctx = hasLaneFilter
-    ? await loadLaneContextFiles({
-        rootDir: context.rootDir,
-        laneIds: laneFilter,
-      })
-    : await loadScopedContextFiles({
-        rootDir: context.rootDir,
-        scopeId: context.scopeId,
-      });
+  const ctx = await loadLaneContextFiles({
+    rootDir: context.rootDir,
+    laneIds: laneFilter,
+  });
 
   const includeMemoryContext = context.contextMode !== 'light';
-
-  const memoryHeader = hasLaneFilter
-    ? '[MEMORY.md — allowed lanes only]'
-    : '[MEMORY.md]';
 
   const contextBlock = [
     '---',
     'Context files (read-only excerpts):',
     ctx.soul ? `\n[SOUL.md]\n${ctx.soul}` : '',
     ctx.user ? `\n[USER.md]\n${ctx.user}` : '',
-    includeMemoryContext && ctx.longTerm ? `\n${memoryHeader}\n${ctx.longTerm}` : '',
+    includeMemoryContext && ctx.longTerm ? `\n[MEMORY.md]\n${ctx.longTerm}` : '',
     includeMemoryContext && ctx.yesterday ? `\n[memory/yesterday]\n${ctx.yesterday}` : '',
     includeMemoryContext && ctx.today ? `\n[memory/today]\n${ctx.today}` : '',
     '---',
@@ -178,7 +177,7 @@ async function makePrimeAgent(context: PrimeContext) {
   const tools = buildPrimeTools(context);
   const toolNames = tools.map((tool) => tool.name);
   const toolInstructions = buildToolInstructions(toolNames);
-  const model = resolvePrimeModel(toolNames);
+  const model = resolvePrimeModel(toolNames, { policyModel: context.model });
   const modelSettings =
     context.contextMode === 'light'
       ? { maxTokens: 220 }
@@ -235,7 +234,7 @@ async function applyFileCitationPolicy(
   return applied.output;
 }
 
-export type PrimeInput = string | AgentInputItem[];
+type PrimeInput = string | AgentInputItem[];
 
 export async function runPrime(input: PrimeInput, opts: PrimeRunOptions = {}) {
   const scopeId = opts.scopeId ?? `default:${opts.channel ?? 'unknown'}:${opts.userId ?? 'unknown'}`;
@@ -251,6 +250,7 @@ export async function runPrime(input: PrimeInput, opts: PrimeRunOptions = {}) {
     channel: opts.channel,
     role,
     ageGroup: opts.ageGroup,
+    model: opts.model,
     scopeType,
     contextMode: opts.contextMode,
     fileSearchEnabled: opts.fileSearchEnabled,
@@ -261,6 +261,7 @@ export async function runPrime(input: PrimeInput, opts: PrimeRunOptions = {}) {
     toolsConfig: opts.toolsConfig,
     allowedMemoryReadLanes: opts.allowedMemoryReadLanes,
     allowedMemoryReadScopes: opts.allowedMemoryReadScopes,
+    allowedMemoryWriteLanes: opts.allowedMemoryWriteLanes,
   };
 
   const agent = await makePrimeAgent(context);

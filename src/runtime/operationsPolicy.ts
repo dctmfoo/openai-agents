@@ -14,7 +14,7 @@ type ControlPlaneWithOperations = NonNullable<FamilyConfig['controlPlane']> & {
   operations?: OperationsPolicyConfig;
 };
 
-export type OperationalControlDecision = {
+type OperationalControlDecision = {
   allow: boolean;
   reason: 'parent_manager' | 'parent_not_manager' | 'not_parent' | 'member_not_found';
 };

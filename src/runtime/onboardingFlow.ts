@@ -1,8 +1,8 @@
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { z } from 'zod';
 
 import {
-  getFamilyConfigPath,
+  resolveFamilyConfigPath,
   loadFamilyConfig,
   type FamilyConfig,
 } from './familyConfig.js';
@@ -72,38 +72,36 @@ const RELINK_MEMBER_INPUT_SCHEMA = z
   })
   .strict();
 
-export type BootstrapParentOnboardingInput = z.infer<typeof BOOTSTRAP_INPUT_SCHEMA>;
-export type IssueOnboardingInviteInput = z.infer<typeof ISSUE_INVITE_INPUT_SCHEMA>;
-export type AcceptOnboardingInviteInput = z.infer<typeof ACCEPT_INVITE_INPUT_SCHEMA>;
-export type RevokeOnboardingInviteInput = z.infer<typeof REVOKE_INVITE_INPUT_SCHEMA>;
-export type RelinkOnboardingMemberInput = z.infer<typeof RELINK_MEMBER_INPUT_SCHEMA>;
+type BootstrapParentOnboardingInput = z.infer<typeof BOOTSTRAP_INPUT_SCHEMA>;
+type IssueOnboardingInviteInput = z.infer<typeof ISSUE_INVITE_INPUT_SCHEMA>;
+type AcceptOnboardingInviteInput = z.infer<typeof ACCEPT_INVITE_INPUT_SCHEMA>;
+type RevokeOnboardingInviteInput = z.infer<typeof REVOKE_INVITE_INPUT_SCHEMA>;
+type RelinkOnboardingMemberInput = z.infer<typeof RELINK_MEMBER_INPUT_SCHEMA>;
 
-export type BootstrapParentOnboardingResult = {
+type BootstrapParentOnboardingResult = {
   outcome: 'bootstrapped' | 'already_bootstrapped';
   onboarding: OnboardingContract;
 };
 
-export type IssueOnboardingInviteResult = {
+type IssueOnboardingInviteResult = {
   outcome: 'issued' | 'already_issued';
   onboarding: OnboardingContract;
 };
 
-export type AcceptOnboardingInviteResult = {
+type AcceptOnboardingInviteResult = {
   outcome: 'joined' | 'already_joined' | 'duplicate_join';
   onboarding: OnboardingContract;
 };
 
-export type RevokeOnboardingInviteResult = {
+type RevokeOnboardingInviteResult = {
   outcome: 'revoked' | 'already_revoked' | 'not_revocable';
   onboarding: OnboardingContract;
 };
 
-export type RelinkOnboardingMemberResult = {
+type RelinkOnboardingMemberResult = {
   outcome: 'relinked' | 'already_relinked' | 'duplicate_join';
   onboarding: OnboardingContract;
 };
-
-type LegacyFamilyConfig = FamilyConfig & { schemaVersion: 1 };
 
 const SCOPE_TERMINOLOGY = {
   dm: 'member DM',
@@ -139,24 +137,56 @@ const buildBootstrapOnboarding = (
 
 const persistFamilyConfig = async (
   haloHome: string,
-  config: LegacyFamilyConfig,
+  config: FamilyConfig,
 ): Promise<void> => {
-  const path = getFamilyConfigPath({ HALO_HOME: haloHome } as NodeJS.ProcessEnv);
-  const payload = JSON.stringify(config, null, 2);
+  const path = await resolveFamilyConfigPath({ haloHome });
+
+  if (config.schemaVersion === 2) {
+    const rawText = await readFile(path, 'utf8');
+    const raw = JSON.parse(rawText) as Record<string, unknown>;
+
+    const rawMembers = Array.isArray(raw.members) ? (raw.members as Record<string, unknown>[]) : [];
+    const rawMemberIds = new Set(rawMembers.map((m) => m.memberId as string));
+
+    const patchedMembers = rawMembers.map((rawMember) => {
+      const normalized = config.members.find((m) => m.memberId === rawMember.memberId);
+      if (!normalized) return rawMember;
+      const { ageGroup: _stripped, ...withoutAgeGroup } = normalized as Record<string, unknown>;
+      return { ...rawMember, ...withoutAgeGroup };
+    });
+
+    for (const member of config.members) {
+      if (!rawMemberIds.has(member.memberId)) {
+        const { ageGroup: _stripped, ...withoutAgeGroup } = member as Record<string, unknown>;
+        patchedMembers.push(withoutAgeGroup);
+      }
+    }
+
+    const patched: Record<string, unknown> = {
+      ...raw,
+      members: patchedMembers,
+    };
+
+    if (config.onboarding !== undefined) {
+      patched.onboarding = config.onboarding;
+    } else {
+      delete patched.onboarding;
+    }
+
+    const payload = JSON.stringify(patched, null, 2);
+    await writeFile(path, `${payload}\n`, 'utf8');
+    return;
+  }
+
+  const v1Config = {
+    ...config,
+    members: config.members.map(({ profileId: _stripped, ...rest }) => rest),
+  };
+  const payload = JSON.stringify(v1Config, null, 2);
   await writeFile(path, `${payload}\n`, 'utf8');
 };
 
-const assertLegacyFamilyConfig = (config: FamilyConfig): LegacyFamilyConfig => {
-  if (config.schemaVersion !== 1) {
-    throw new Error(
-      'Onboarding persistence currently supports schemaVersion 1 family config only.',
-    );
-  }
-
-  return config as LegacyFamilyConfig;
-};
-
-const requireOnboardingContract = (familyConfig: LegacyFamilyConfig): OnboardingContract => {
+const requireOnboardingContract = (familyConfig: FamilyConfig): OnboardingContract => {
   if (familyConfig.onboarding) {
     return familyConfig.onboarding;
   }
@@ -253,7 +283,7 @@ export async function bootstrapParentOnboarding(
 ): Promise<BootstrapParentOnboardingResult> {
   const input = BOOTSTRAP_INPUT_SCHEMA.parse(rawInput);
   const loaded = await loadFamilyConfig({ haloHome: input.haloHome });
-  const familyConfig = assertLegacyFamilyConfig(loaded);
+  const familyConfig = loaded;
 
   if (familyConfig.onboarding) {
     const existingOwnerLink = familyConfig.onboarding.memberLinks.find((link) => {
@@ -273,7 +303,7 @@ export async function bootstrapParentOnboarding(
 
   const onboarding = familyConfig.onboarding ?? buildBootstrapOnboarding(input);
 
-  const nextConfig: LegacyFamilyConfig = {
+  const nextConfig: FamilyConfig = {
     ...familyConfig,
     onboarding,
   };
@@ -291,7 +321,7 @@ export async function issueOnboardingInvite(
 ): Promise<IssueOnboardingInviteResult> {
   const input = ISSUE_INVITE_INPUT_SCHEMA.parse(rawInput);
   const loaded = await loadFamilyConfig({ haloHome: input.haloHome });
-  const familyConfig = assertLegacyFamilyConfig(loaded);
+  const familyConfig = loaded;
   const onboarding = requireOnboardingContract(familyConfig);
 
   const existingInvite = onboarding.invites.find((invite) => invite.inviteId === input.inviteId);
@@ -330,7 +360,7 @@ export async function issueOnboardingInvite(
     ],
   });
 
-  const nextConfig: LegacyFamilyConfig = {
+  const nextConfig: FamilyConfig = {
     ...familyConfig,
     onboarding: nextOnboarding,
   };
@@ -348,7 +378,7 @@ export async function acceptOnboardingInvite(
 ): Promise<AcceptOnboardingInviteResult> {
   const input = ACCEPT_INVITE_INPUT_SCHEMA.parse(rawInput);
   const loaded = await loadFamilyConfig({ haloHome: input.haloHome });
-  const familyConfig = assertLegacyFamilyConfig(loaded);
+  const familyConfig = loaded;
   const onboarding = requireOnboardingContract(familyConfig);
 
   const inviteIndex = onboarding.invites.findIndex((invite) => invite.inviteId === input.inviteId);
@@ -426,6 +456,7 @@ export async function acceptOnboardingInvite(
         memberId: input.memberId,
         displayName: input.displayName,
         role: 'child',
+        profileId: invite.profileId,
         ageGroup: input.ageGroup,
         parentalVisibility: input.parentalVisibility,
         telegramUserIds: [input.telegramUserId],
@@ -437,6 +468,7 @@ export async function acceptOnboardingInvite(
         memberId: input.memberId,
         displayName: input.displayName,
         role: 'parent',
+        profileId: invite.profileId,
         telegramUserIds: [input.telegramUserId],
       });
     }
@@ -518,7 +550,7 @@ export async function acceptOnboardingInvite(
     invites: nextInvites,
   });
 
-  const nextConfig: LegacyFamilyConfig = {
+  const nextConfig: FamilyConfig = {
     ...familyConfig,
     members,
     onboarding: nextOnboarding,
@@ -537,7 +569,7 @@ export async function revokeOnboardingInvite(
 ): Promise<RevokeOnboardingInviteResult> {
   const input = REVOKE_INVITE_INPUT_SCHEMA.parse(rawInput);
   const loaded = await loadFamilyConfig({ haloHome: input.haloHome });
-  const familyConfig = assertLegacyFamilyConfig(loaded);
+  const familyConfig = loaded;
   const onboarding = requireOnboardingContract(familyConfig);
 
   const inviteIndex = onboarding.invites.findIndex((invite) => invite.inviteId === input.inviteId);
@@ -577,7 +609,7 @@ export async function revokeOnboardingInvite(
     invites: nextInvites,
   });
 
-  const nextConfig: LegacyFamilyConfig = {
+  const nextConfig: FamilyConfig = {
     ...familyConfig,
     onboarding: nextOnboarding,
   };
@@ -595,7 +627,7 @@ export async function relinkOnboardingMember(
 ): Promise<RelinkOnboardingMemberResult> {
   const input = RELINK_MEMBER_INPUT_SCHEMA.parse(rawInput);
   const loaded = await loadFamilyConfig({ haloHome: input.haloHome });
-  const familyConfig = assertLegacyFamilyConfig(loaded);
+  const familyConfig = loaded;
   const onboarding = requireOnboardingContract(familyConfig);
 
   if (input.previousTelegramUserId === input.nextTelegramUserId) {
@@ -757,7 +789,7 @@ export async function relinkOnboardingMember(
     ],
   });
 
-  const nextConfig: LegacyFamilyConfig = {
+  const nextConfig: FamilyConfig = {
     ...familyConfig,
     members: nextMembers,
     onboarding: nextOnboarding,

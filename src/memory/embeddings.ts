@@ -3,14 +3,14 @@ export type EmbeddingProvider = {
   embed: (inputs: string[]) => Promise<number[][]>;
 };
 
-export type EmbedWithFallbackOptions = {
+type EmbedWithFallbackOptions = {
   batchSize?: number;
   maxRetries?: number;
   backoffMs?: number;
   expectedDimensions?: number;
 };
 
-export type EmbedResult = {
+type EmbedResult = {
   provider: string;
   vectors: number[][];
 };
