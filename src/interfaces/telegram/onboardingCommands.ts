@@ -90,7 +90,14 @@ const mapOnboardingRole = (role: 'parent' | 'spouse' | 'child'): 'parent' | 'chi
   return 'parent';
 };
 
-const resolveProfileId = (role: 'parent' | 'child'): string => {
+const resolveProfileId = (role: 'parent' | 'child', family: FamilyConfig): string => {
+  if (family.controlPlane?.profiles) {
+    const match = family.controlPlane.profiles.find((p) => p.role === role);
+    if (match) {
+      return match.profileId;
+    }
+  }
+
   if (role === 'child') {
     return 'young_child';
   }
@@ -240,7 +247,7 @@ const runJoinCommand = async (
   }
 
   const resolvedRole = mapOnboardingRole(join.role);
-  const profileId = resolveProfileId(resolvedRole);
+  const profileId = resolveProfileId(resolvedRole, input.family);
   const inviteId = buildInviteId(resolvedRole, join.memberId, join.telegramUserId);
 
   const issuedAt = input.now.toISOString();
