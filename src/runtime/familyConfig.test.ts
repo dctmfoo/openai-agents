@@ -31,7 +31,7 @@ describe('familyConfig', () => {
           memberId: 'wags',
           displayName: 'Wags',
           role: 'parent',
-          telegramUserIds: [889348242],
+          telegramUserIds: [123456789],
         },
         {
           memberId: 'kid',
