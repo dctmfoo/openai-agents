@@ -19,8 +19,8 @@ describe('admin sessions helpers', () => {
   });
 
   it('buildClearSessionUrl encodes scope id', () => {
-    expect(buildClearSessionUrl('http://x', 'telegram:889348242')).toBe(
-      'http://x/sessions/telegram%3A889348242/clear',
+    expect(buildClearSessionUrl('http://x', 'telegram:123456789')).toBe(
+      'http://x/sessions/telegram%3A123456789/clear',
     );
   });
 
@@ -31,8 +31,8 @@ describe('admin sessions helpers', () => {
   });
 
   it('buildDistillSessionUrl encodes scope id', () => {
-    expect(buildDistillSessionUrl('http://x', 'telegram:889348242')).toBe(
-      'http://x/sessions/telegram%3A889348242/distill',
+    expect(buildDistillSessionUrl('http://x', 'telegram:123456789')).toBe(
+      'http://x/sessions/telegram%3A123456789/distill',
     );
   });
 
