@@ -6,18 +6,18 @@
       "memberId": "wags",
       "displayName": "Wags",
       "role": "parent",
-      "telegramUserIds": [889348242]
+      "telegramUserIds": [123456789]
     },
     {
-      "memberId": "kairav",
-      "displayName": "Kairav",
+      "memberId": "noah",
+      "displayName": "Noah",
       "role": "child",
       "ageGroup": "child",
       "telegramUserIds": [111111111]
     },
     {
-      "memberId": "manasa",
-      "displayName": "Manasa",
+      "memberId": "mia",
+      "displayName": "Mia",
       "role": "child",
       "ageGroup": "young_adult",
       "parentalVisibility": false,
