@@ -1,5 +1,5 @@
 {
-  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
     "src/interfaces/telegram/start.ts",
     "src/interfaces/cli/run.ts",
@@ -15,6 +15,10 @@
     "!node_modules/**",
     "!apps/admin/src-tauri/target/**"
   ],
+  "ignoreExportsUsedInFile": {
+    "type": true,
+    "interface": true
+  },
   "tags": [
     "-lintignore"
   ]

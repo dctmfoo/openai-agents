@@ -39,7 +39,7 @@ describe('buildShellTool', () => {
 
   it('executes allowed command', async () => {
     const tool = buildShellTool(baseConfig, 'parent');
-    if (!tool) throw new Error('Expected shell tool');
+    if (!tool?.shell) throw new Error('Expected shell tool');
 
     const result = await tool.shell.run({ commands: ['echo hello'] });
 
@@ -50,7 +50,7 @@ describe('buildShellTool', () => {
 
   it('denies blocked command with exit 126', async () => {
     const tool = buildShellTool(baseConfig, 'parent');
-    if (!tool) throw new Error('Expected shell tool');
+    if (!tool?.shell) throw new Error('Expected shell tool');
 
     const result = await tool.shell.run({ commands: ['sudo echo hi'] });
 
@@ -61,7 +61,7 @@ describe('buildShellTool', () => {
 
   it('denies non-allowed command with exit 126', async () => {
     const tool = buildShellTool(baseConfig, 'parent');
-    if (!tool) throw new Error('Expected shell tool');
+    if (!tool?.shell) throw new Error('Expected shell tool');
 
     const result = await tool.shell.run({ commands: ['cat /etc/passwd'] });
 
@@ -85,7 +85,7 @@ describe('buildShellTool', () => {
       },
       'parent',
     );
-    if (!tool) throw new Error('Expected shell tool');
+    if (!tool?.shell) throw new Error('Expected shell tool');
 
     const result = await tool.shell.run({ commands: ['sleep 10'] });
 
