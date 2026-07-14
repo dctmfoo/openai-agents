@@ -27,7 +27,7 @@
   "license": "ISC",
   "packageManager": "pnpm@10.28.1",
   "dependencies": {
-    "@openai/agents": "^0.9.0",
+    "@openai/agents": "^0.13.3",
     "better-sqlite3": "^12.6.2",
     "dotenv": "^17.2.3",
     "grammy": "^1.39.3",
@@ -36,15 +36,15 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^25.2.0",
+    "@types/node": "^26.1.1",
     "@typescript-eslint/parser": "^8.42.0",
     "eslint": "^10.3.0",
     "eslint-plugin-sonarjs": "^4.0.3",
     "globals": "^17.6.0",
-    "jscpd": "^4.0.0",
+    "jscpd": "^5.0.12",
     "knip": "^6.11.0",
     "tsx": "^4.21.0",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.0.18"
   }
 }
