@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { buildPrimeInstructions } from './prime.js';
+import { buildPrimeInstructions, resolvePrimeModel } from './prime.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe('buildPrimeInstructions', () => {
   it('adds child-tier instructions for child age group', () => {
@@ -57,5 +62,24 @@ describe('buildPrimeInstructions', () => {
     expect(instructions).not.toContain(
       "Never share information from other family members' private conversations.",
     );
+  });
+});
+
+describe('prime.ts lanes-only loading', () => {
+  it('does not import or use loadScopedContextFiles (lanes-only)', async () => {
+    const primeSrc = await readFile(path.join(__dirname, 'prime.ts'), 'utf8');
+    expect(primeSrc).not.toContain('loadScopedContextFiles');
+  });
+});
+
+describe('resolvePrimeModel', () => {
+  it('prefers policyModel over env var and tool-based default', () => {
+    const model = resolvePrimeModel([], { policyModel: 'gpt-4.1' });
+    expect(model).toBe('gpt-4.1');
+  });
+
+  it('returns undefined when no policyModel and no env var', () => {
+    const model = resolvePrimeModel([]);
+    expect(model).toBeUndefined();
   });
 });

@@ -1,9 +1,11 @@
 import { tool, type RunContext } from '@openai/agents';
 import { existsSync } from 'node:fs';
 import { z } from 'zod';
-import { loadHaloConfig } from '../runtime/haloConfig.js';
-import type { PrimeContext } from '../prime/types.js';
 import { SemanticMemory, type SemanticMemoryConfig } from '../memory/semanticMemory.js';
+import type { SearchEngineOptions } from '../memory/searchEngine.js';
+import type { PrimeContext } from '../prime/types.js';
+import { loadHaloConfig } from '../runtime/haloConfig.js';
+import { hashSessionId } from '../sessions/sessionHash.js';
 import { TOOL_NAMES } from './toolNames.js';
 
 const semanticSearchSchema = z.object({
@@ -35,6 +37,39 @@ type SemanticSearchResponse = {
   error?: SemanticSearchError;
 };
 
+type ScopedRetrievalPolicyInput = {
+  allowedLaneIds: string[];
+  allowedScopeIds: string[];
+};
+
+type PathPolicyResolution = {
+  laneId: string | null;
+  scopeId: string | null;
+  sawLaneHash: boolean;
+  sawScopeHash: boolean;
+};
+
+const stableUnique = (values: string[]): string[] => {
+  const seen = new Set<string>();
+  const out: string[] = [];
+
+  for (const value of values) {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    if (seen.has(trimmed)) {
+      continue;
+    }
+
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+
+  return out;
+};
+
 const requirePrimeContext = (runContext?: RunContext<PrimeContext>): PrimeContext => {
   const context = runContext?.context;
   if (!context?.rootDir || !context.scopeId) {
@@ -51,8 +86,11 @@ type SemanticConfigLoadResult = {
 const loadSemanticConfig = async (rootDir: string): Promise<SemanticConfigLoadResult> => {
   try {
     const config = await loadHaloConfig({ ...process.env, HALO_HOME: rootDir } as NodeJS.ProcessEnv);
-    const semantic = (config as any).semanticMemory as SemanticMemoryConfig | undefined;
-    if (!semantic?.enabled) return { config: null };
+    const semantic = config.semanticMemory;
+    if (!semantic.enabled) {
+      return { config: null };
+    }
+
     return { config: semantic };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -68,6 +106,102 @@ const buildResponse = (
   results,
   error,
 });
+
+const normalizePath = (value: string): string => {
+  return value.replace(/\\/g, '/');
+};
+
+const resolvePathPolicy = (
+  rawPath: string,
+  laneHashToId: Map<string, string>,
+  scopeHashToId: Map<string, string>,
+): PathPolicyResolution => {
+  const path = normalizePath(rawPath);
+  const segments = path.split('/').filter((segment) => segment.length > 0);
+
+  let laneId: string | null = null;
+  let scopeId: string | null = null;
+  let sawLaneHash = false;
+  let sawScopeHash = false;
+
+  const laneIndex = segments.lastIndexOf('lanes');
+  if (laneIndex >= 0 && laneIndex + 1 < segments.length) {
+    const laneHash = segments[laneIndex + 1];
+    sawLaneHash = true;
+    laneId = laneHashToId.get(laneHash) ?? null;
+  }
+
+  const scopeIndex = segments.lastIndexOf('scopes');
+  if (scopeIndex >= 0 && scopeIndex + 1 < segments.length) {
+    const scopeHash = segments[scopeIndex + 1];
+    sawScopeHash = true;
+    scopeId = scopeHashToId.get(scopeHash) ?? null;
+  }
+
+  const transcriptMatch = path.match(/\/transcripts\/([a-f0-9]{64})\.jsonl$/i);
+  if (transcriptMatch?.[1]) {
+    sawScopeHash = true;
+    const transcriptScopeId = scopeHashToId.get(transcriptMatch[1]);
+    if (transcriptScopeId) {
+      scopeId = transcriptScopeId;
+    }
+  }
+
+  return {
+    laneId,
+    scopeId,
+    sawLaneHash,
+    sawScopeHash,
+  };
+};
+
+export function buildScopedRetrievalCandidatePrefilter(
+  input: ScopedRetrievalPolicyInput,
+): NonNullable<SearchEngineOptions['candidatePrefilter']> {
+  const allowedLaneIds = stableUnique(input.allowedLaneIds);
+  const allowedScopeIds = stableUnique(input.allowedScopeIds);
+
+  const allowedLaneSet = new Set(allowedLaneIds);
+  const allowedScopeSet = new Set(allowedScopeIds);
+
+  const laneHashToId = new Map<string, string>();
+  for (const laneId of allowedLaneIds) {
+    laneHashToId.set(hashSessionId(laneId), laneId);
+  }
+
+  const scopeHashToId = new Map<string, string>();
+  for (const scopeId of allowedScopeIds) {
+    scopeHashToId.set(hashSessionId(scopeId), scopeId);
+  }
+
+  return ({ candidate }) => {
+    const policy = resolvePathPolicy(candidate.path, laneHashToId, scopeHashToId);
+
+    if (policy.sawScopeHash && !policy.scopeId) {
+      return false;
+    }
+
+    if (policy.sawLaneHash && !policy.laneId) {
+      return false;
+    }
+
+    if (policy.scopeId && allowedScopeSet.size > 0 && !allowedScopeSet.has(policy.scopeId)) {
+      return false;
+    }
+
+    if (policy.laneId && allowedLaneSet.size > 0 && !allowedLaneSet.has(policy.laneId)) {
+      return false;
+    }
+
+    if (!policy.scopeId && !policy.laneId) {
+      if (allowedScopeSet.size > 0 || allowedLaneSet.size > 0) {
+        return false;
+      }
+    }
+
+    return true;
+  };
+}
 
 export async function semanticSearch(
   input: SemanticSearchInput,
@@ -98,10 +232,25 @@ export async function semanticSearch(
     });
   }
 
+  const allowedScopeIds = stableUnique(
+    context.allowedMemoryReadScopes && context.allowedMemoryReadScopes.length > 0
+      ? context.allowedMemoryReadScopes
+      : [context.scopeId],
+  );
+  const allowedLaneIds = stableUnique(context.allowedMemoryReadLanes ?? []);
+
+  const candidatePrefilter = buildScopedRetrievalCandidatePrefilter({
+    allowedLaneIds,
+    allowedScopeIds,
+  });
+
   try {
     const memory = new SemanticMemory({
       rootDir: context.rootDir,
       scopeId: context.scopeId,
+      searchEngineOptions: {
+        candidatePrefilter,
+      },
       semanticConfig,
     });
 

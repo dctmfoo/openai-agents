@@ -3,7 +3,11 @@ import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { semanticSearch } from './semanticSearchTool.js';
+import {
+  buildScopedRetrievalCandidatePrefilter,
+  semanticSearch,
+} from './semanticSearchTool.js';
+import { hashSessionId } from '../sessions/sessionHash.js';
 
 describe('semanticSearch', () => {
   it('returns an error when semantic memory is disabled', async () => {
@@ -71,5 +75,58 @@ describe('semanticSearch', () => {
 
     expect(result.results).toEqual([]);
     expect(result.error?.code).toBe('semantic_memory_disabled');
+  });
+
+  it('allows matching scope and lane hashes and blocks unknown hashes', () => {
+    const allowedLane = 'parent_private:wags';
+    const allowedScope = 'telegram:dm:wags';
+
+    const prefilter = buildScopedRetrievalCandidatePrefilter({
+      allowedLaneIds: [allowedLane],
+      allowedScopeIds: [allowedScope],
+    });
+
+    const allowedLanePath = `/tmp/memory/lanes/${hashSessionId(allowedLane)}/MEMORY.md`;
+    const allowedScopePath = `/tmp/memory/scopes/${hashSessionId(allowedScope)}/MEMORY.md`;
+    const deniedScopeTranscript = `transcripts/${hashSessionId('telegram:dm:kid')}.jsonl`;
+
+    expect(
+      prefilter({
+        request: { query: 'x', embedding: [1], topK: 3 },
+        candidate: {
+          chunkIdx: 1,
+          content: 'ok',
+          path: allowedLanePath,
+          updatedAt: 1,
+          accessCount: 0,
+        },
+      }),
+    ).toBe(true);
+
+    expect(
+      prefilter({
+        request: { query: 'x', embedding: [1], topK: 3 },
+        candidate: {
+          chunkIdx: 2,
+          content: 'ok',
+          path: allowedScopePath,
+          updatedAt: 1,
+          accessCount: 0,
+        },
+      }),
+    ).toBe(true);
+
+    expect(
+      prefilter({
+        request: { query: 'x', embedding: [1], topK: 3 },
+        candidate: {
+          chunkIdx: 3,
+          content: 'blocked',
+          path: deniedScopeTranscript,
+          updatedAt: 1,
+          accessCount: 0,
+        },
+      }),
+    ).toBe(false);
   });
 });

@@ -2,7 +2,7 @@ import { readFile, appendFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-export type MemoryPaths = {
+type MemoryPaths = {
   rootDir: string; // runtime root (HALO_HOME)
 };
 

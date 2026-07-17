@@ -7,7 +7,7 @@ export type ToolPolicyContext = {
   scopeType?: 'dm' | 'parents_group';
 };
 
-export type ToolPolicyDecision = {
+type ToolPolicyDecision = {
   allowedToolNames: Set<ToolName>;
 };
 

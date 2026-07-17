@@ -102,5 +102,13 @@ describe('scopeFileRegistry', () => {
     expect(persisted?.vectorStoreId).toBe('vs_123');
     expect(persisted?.files).toHaveLength(1);
     expect(persisted?.files[0]?.telegramFileUniqueId).toBe('telegram-unique-2');
+    expect(persisted?.files[0]?.storageMetadata).toEqual({
+      laneId: 'system_audit',
+      ownerMemberId: 'wags',
+      scopeId,
+      policyVersion: 'legacy-v1',
+      artifactType: 'document',
+      visibilityClass: 'system',
+    });
   });
 });

@@ -155,6 +155,43 @@ const FILE_MEMORY_CONFIG_SCHEMA = z
     },
   });
 
+const CONTROL_PLANE_PROFILE_SCHEMA = z
+  .object({
+    path: z.string().min(1),
+  })
+  .strict();
+
+const CONTROL_PLANE_CONFIG_SCHEMA = z
+  .object({
+    activeProfile: z.string().min(1).default('legacy'),
+    profiles: z
+      .record(z.string().min(1), CONTROL_PLANE_PROFILE_SCHEMA)
+      .default({
+        legacy: {
+          path: 'config/family.json',
+        },
+      }),
+  })
+  .default({
+    activeProfile: 'legacy',
+    profiles: {
+      legacy: {
+        path: 'config/family.json',
+      },
+    },
+  })
+  .superRefine((config, ctx) => {
+    if (config.activeProfile in config.profiles) {
+      return;
+    }
+
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['activeProfile'],
+      message: `activeProfile must exist in controlPlane.profiles`,
+    });
+  });
+
 const HALO_CONFIG_SCHEMA = z.object({
   schemaVersion: z.literal(HALO_CONFIG_SCHEMA_VERSION),
 
@@ -235,6 +272,8 @@ const HALO_CONFIG_SCHEMA = z.object({
   fileMemory: FILE_MEMORY_CONFIG_SCHEMA,
 
   tools: TOOLS_CONFIG_SCHEMA,
+
+  controlPlane: CONTROL_PLANE_CONFIG_SCHEMA,
 
   family: FAMILY_CONFIG_SCHEMA.optional(),
 });

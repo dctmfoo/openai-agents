@@ -10,7 +10,7 @@ import { wrapWithTranscript } from './transcriptSession.js';
 import { wrapWithTranscriptAndDistillation } from './distillingTranscriptSession.js';
 import type { DistillationMode } from '../memory/distillationRunner.js';
 
-export type SessionStoreOptions = {
+type SessionStoreOptions = {
   /**
    * Enable OpenAI-backed compaction.
    *

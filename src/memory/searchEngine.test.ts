@@ -89,4 +89,118 @@ describe('searchEngine', () => {
 
     expect(results[0].chunkIdx).toBe(1);
   });
+
+  it('prefilters candidates before scoring', async () => {
+    const store = {
+      vectorSearch: () => [
+        {
+          chunkIdx: 1,
+          distance: 0.1,
+          content: 'allowed',
+          path: '/allowed/a.md',
+          updatedAt: Date.now(),
+          accessCount: 0,
+          lastAccessedAt: null,
+        },
+      ],
+      textSearch: () => [
+        {
+          chunkIdx: 2,
+          score: 0.01,
+          content: 'denied',
+          path: '/denied/b.md',
+          updatedAt: Date.now(),
+          accessCount: 0,
+          lastAccessedAt: null,
+        },
+      ],
+      markAccess: () => undefined,
+    };
+
+    const engine = new SearchEngine(store, {
+      minScore: 0,
+      candidatePrefilter: ({ candidate }) => candidate.path.includes('/allowed/'),
+    });
+
+    const results = await engine.search({
+      query: 'policy',
+      embedding: [1, 0],
+      topK: 5,
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0].chunkIdx).toBe(1);
+  });
+
+  it('keeps policy prefilter enforced across neighbor expansion and reranking', async () => {
+    let marked: number[] = [];
+    const store = {
+      vectorSearch: () => [
+        {
+          chunkIdx: 1,
+          distance: 0.1,
+          content: 'seed',
+          path: '/allowed/seed.md',
+          updatedAt: Date.now(),
+          accessCount: 0,
+          lastAccessedAt: null,
+        },
+      ],
+      textSearch: () => [],
+      markAccess: (chunkIdxs: number[]) => {
+        marked = chunkIdxs;
+      },
+    };
+
+    const engine = new SearchEngine(store, {
+      minScore: 0,
+      candidatePrefilter: ({ candidate }) => candidate.path.includes('/allowed/'),
+      neighborExpansionHook: () => [
+        {
+          chunkIdx: 44,
+          content: 'blocked neighbor',
+          path: '/denied/neighbor.md',
+          score: 100,
+          snippet: 'blocked',
+          baseScore: 100,
+          recencyBoost: 1,
+          accessBoost: 1,
+        },
+        {
+          chunkIdx: 2,
+          content: 'allowed neighbor',
+          path: '/allowed/neighbor.md',
+          score: 99,
+          snippet: 'allowed',
+          baseScore: 99,
+          recencyBoost: 1,
+          accessBoost: 1,
+        },
+      ],
+      rerankHook: ({ results }) => {
+        return [
+          {
+            chunkIdx: 45,
+            content: 'blocked rerank',
+            path: '/denied/rerank.md',
+            score: 120,
+            snippet: 'blocked rerank',
+            baseScore: 120,
+            recencyBoost: 1,
+            accessBoost: 1,
+          },
+          ...results,
+        ];
+      },
+    });
+
+    const results = await engine.search({
+      query: 'policy',
+      embedding: [1, 0],
+      topK: 5,
+    });
+
+    expect(results.map((result) => result.chunkIdx)).toEqual([2, 1]);
+    expect(marked).toEqual([2, 1]);
+  });
 });

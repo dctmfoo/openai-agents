@@ -6,7 +6,7 @@ import { createSemanticSyncScheduler } from '../memory/semanticSyncScheduler.js'
 import { createFileMemoryRetentionScheduler } from '../files/fileMemoryRetentionScheduler.js';
 import { loadFamilyConfig } from '../runtime/familyConfig.js';
 
-export type GatewayOptions = {
+type GatewayOptions = {
   telegram?: {
     token?: string;
     logDir?: string;

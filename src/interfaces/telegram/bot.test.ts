@@ -5,16 +5,19 @@ import path from 'node:path';
 
 import {
   createTelegramAdapter,
+  resolveFamilyGroupChatId,
   UNKNOWN_DM_REPLY,
   type TelegramBotLike,
   type TelegramContext,
 } from './bot.js';
+import type { FamilyConfig } from '../../runtime/familyConfig.js';
 import type { FileMemoryConfig } from '../../runtime/haloConfig.js';
 
 type HandlerBag = {
   messageText?: (ctx: TelegramContext) => Promise<void> | void;
   messageDocument?: (ctx: TelegramContext) => Promise<void> | void;
   messagePhoto?: (ctx: TelegramContext) => Promise<void> | void;
+  messageVoice?: (ctx: TelegramContext) => Promise<void> | void;
   error?: (err: unknown) => Promise<void> | void;
 };
 
@@ -37,6 +40,9 @@ const makeFakeBot = (): FakeBot => {
       }
       if (event === 'message:photo') {
         handlers.messagePhoto = handler;
+      }
+      if (event === 'message:voice') {
+        handlers.messageVoice = handler;
       }
     },
     catch: (handler) => {
@@ -94,6 +100,31 @@ describe('telegram adapter', () => {
     },
   };
 
+  const familyConfigWithFamilyGroup = {
+    ...familyConfig,
+    schemaVersion: 2,
+    controlPlane: {
+      policyVersion: 'v2',
+      activeProfileId: 'default',
+      scopes: [
+        {
+          scopeId: 'scope-parents-group',
+          scopeType: 'parents_group',
+          telegramChatId: 777,
+        },
+        {
+          scopeId: 'scope-family-group',
+          scopeType: 'family_group',
+          telegramChatId: 888,
+        },
+      ],
+      capabilityTiers: {},
+      memoryLanePolicies: {},
+      modelPolicies: {},
+      safetyPolicies: {},
+    },
+  };
+
   it('runs Prime for allowed private messages and replies with output', async () => {
     const bot = makeFakeBot();
     const appendJsonl = vi.fn().mockResolvedValue(undefined);
@@ -112,7 +143,7 @@ describe('telegram adapter', () => {
       fileMemory: fileMemoryConfig,
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         getScopeVectorStoreId,
@@ -140,19 +171,185 @@ describe('telegram adapter', () => {
       role: 'parent',
       ageGroup: undefined,
       scopeType: 'dm',
+      model: 'gpt-4.1',
       fileSearchEnabled: true,
       fileSearchVectorStoreId: 'vs_123',
       fileSearchIncludeResults: false,
       fileSearchMaxNumResults: 5,
+      toolsConfig: undefined,
+      allowedMemoryReadLanes: ['family_shared', 'parent_private:wags', 'parents_shared'],
+      allowedMemoryReadScopes: ['telegram:dm:wags'],
+      allowedMemoryWriteLanes: ['parent_private:wags'],
     });
-    expect(appendDailyNote).toHaveBeenCalledWith({ rootDir: '/root', scopeId: 'telegram:dm:wags' }, '[user] hello');
-    expect(appendDailyNote).toHaveBeenCalledWith({ rootDir: '/root', scopeId: 'telegram:dm:wags' }, '[prime] hi there');
+    const allNotes = appendDailyNote.mock.calls.flatMap((args) => (args[1] as string[]) ?? []);
+    expect(allNotes).toContain('[user] hello');
+    expect(allNotes).toContain('[prime] hi there');
     expect(reply).toHaveBeenCalledWith('hi there');
 
     expect(appendJsonl).toHaveBeenCalledTimes(3);
     const [logPath, firstRecord] = appendJsonl.mock.calls[0];
     expect(logPath).toBe('logs/events.jsonl');
     expect(firstRecord.type).toBe('telegram.update');
+  });
+
+  it('disables file_search when lane guard blocks all scoped files', async () => {
+    const bot = makeFakeBot();
+    const appendJsonl = vi.fn().mockResolvedValue(undefined);
+    const appendDailyNote = vi.fn().mockResolvedValue('memory/2026-02-02.md');
+    const runPrime = vi.fn().mockResolvedValue({ finalOutput: 'safe response' });
+    const loadFamilyConfig = vi.fn().mockResolvedValue(familyConfig);
+    const getScopeVectorStoreId = vi.fn().mockResolvedValue('vs_123');
+    const readScopeFileRegistry = vi.fn().mockResolvedValue({
+      scopeId: 'telegram:dm:wags',
+      vectorStoreId: 'vs_123',
+      createdAtMs: 1,
+      updatedAtMs: 1,
+      files: [
+        {
+          telegramFileId: 'telegram-file-1',
+          telegramFileUniqueId: 'telegram-unique-1',
+          filename: 'kid-notes.pdf',
+          mimeType: 'application/pdf',
+          sizeBytes: 42,
+          openaiFileId: 'file_1',
+          vectorStoreFileId: 'vsfile_1',
+          status: 'completed',
+          lastError: null,
+          uploadedBy: 'kid',
+          uploadedAtMs: 1,
+          storageMetadata: {
+            laneId: 'child_private:kid',
+            ownerMemberId: 'kid',
+            scopeId: 'telegram:dm:wags',
+            policyVersion: 'v2',
+            artifactType: 'document',
+            visibilityClass: 'private',
+          },
+        },
+      ],
+    });
+
+    createTelegramAdapter({
+      token: 'token',
+      rootDir: '/root',
+      bot,
+      fileMemory: fileMemoryConfig,
+      deps: {
+        appendJsonl,
+        appendLaneDailyNotesUnique: appendDailyNote,
+        runPrime,
+        loadFamilyConfig,
+        getScopeVectorStoreId,
+        readScopeFileRegistry,
+      },
+    });
+
+    const reply = vi.fn().mockResolvedValue(undefined);
+    const ctx: TelegramContext = {
+      chat: { id: 123, type: 'private' },
+      message: { text: 'hello', message_id: 8 },
+      from: { id: 456 },
+      reply,
+    };
+
+    const handler = bot.handlers.messageText;
+    if (!handler) throw new Error('message handler not registered');
+
+    await handler(ctx);
+
+    expect(runPrime).toHaveBeenCalledWith(
+      'hello',
+      expect.objectContaining({
+        fileSearchEnabled: false,
+        fileSearchVectorStoreId: undefined,
+        allowedMemoryReadScopes: ['telegram:dm:wags'],
+      }),
+    );
+  });
+
+  it('runs Prime for mentioned family-group messages', async () => {
+    const bot = makeFakeBot();
+    const appendJsonl = vi.fn().mockResolvedValue(undefined);
+    const appendDailyNote = vi.fn().mockResolvedValue('memory/2026-02-02.md');
+    const runPrime = vi.fn().mockResolvedValue({ finalOutput: 'group-safe reply' });
+    const loadFamilyConfig = vi.fn().mockResolvedValue(familyConfigWithFamilyGroup);
+
+    createTelegramAdapter({
+      token: 'token',
+      rootDir: '/root',
+      bot,
+      deps: {
+        appendJsonl,
+        appendLaneDailyNotesUnique: appendDailyNote,
+        runPrime,
+        loadFamilyConfig,
+      },
+    });
+
+    const reply = vi.fn().mockResolvedValue(undefined);
+    const ctx: TelegramContext = {
+      chat: { id: 888, type: 'group' },
+      message: { text: '@halo quick summary please', message_id: 42 },
+      from: { id: 456 },
+      reply,
+    };
+
+    const handler = bot.handlers.messageText;
+    if (!handler) throw new Error('message handler not registered');
+
+    await handler(ctx);
+
+    expect(runPrime).toHaveBeenCalledWith(
+      '@halo quick summary please',
+      expect.objectContaining({
+        channel: 'telegram',
+        userId: '456',
+        scopeId: 'telegram:family_group:888',
+        rootDir: '/root',
+        role: 'parent',
+        scopeType: undefined,
+        fileSearchEnabled: false,
+        allowedMemoryReadLanes: ['family_shared'],
+        allowedMemoryWriteLanes: ['family_shared'],
+      }),
+    );
+    expect(reply).toHaveBeenCalledWith('group-safe reply');
+  });
+
+  it('does not run Prime for unmentioned family-group messages', async () => {
+    const bot = makeFakeBot();
+    const appendJsonl = vi.fn().mockResolvedValue(undefined);
+    const appendDailyNote = vi.fn().mockResolvedValue('memory/2026-02-02.md');
+    const runPrime = vi.fn().mockResolvedValue({ finalOutput: 'ignored' });
+    const loadFamilyConfig = vi.fn().mockResolvedValue(familyConfigWithFamilyGroup);
+
+    createTelegramAdapter({
+      token: 'token',
+      rootDir: '/root',
+      bot,
+      deps: {
+        appendJsonl,
+        appendLaneDailyNotesUnique: appendDailyNote,
+        runPrime,
+        loadFamilyConfig,
+      },
+    });
+
+    const reply = vi.fn().mockResolvedValue(undefined);
+    const ctx: TelegramContext = {
+      chat: { id: 888, type: 'group' },
+      message: { text: 'quick summary please', message_id: 43 },
+      from: { id: 456 },
+      reply,
+    };
+
+    const handler = bot.handlers.messageText;
+    if (!handler) throw new Error('message handler not registered');
+
+    await handler(ctx);
+
+    expect(runPrime).not.toHaveBeenCalled();
+    expect(reply).not.toHaveBeenCalled();
   });
 
   it('uploads documents when file memory upload is enabled', async () => {
@@ -176,7 +373,7 @@ describe('telegram adapter', () => {
       fileMemory: fileMemoryConfig,
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         downloadTelegramFile,
@@ -223,6 +420,8 @@ describe('telegram adapter', () => {
       bytes: new Uint8Array([1, 2, 3]),
       maxFilesPerScope: 200,
       pollIntervalMs: 1500,
+      laneId: 'parent_private:wags',
+      policyVersion: 'legacy-v1',
     });
     expect(reply).toHaveBeenNthCalledWith(1, 'Got it. Downloading report.pdf from Telegram…');
     expect(reply).toHaveBeenNthCalledWith(
@@ -285,7 +484,7 @@ describe('telegram adapter', () => {
       },
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         downloadTelegramFile,
@@ -370,13 +569,11 @@ describe('telegram adapter', () => {
       ]),
     );
 
-    const imageNoteCall = appendDailyNote.mock.calls.find(([, note]) =>
-      String(note).startsWith('[user:image:photo]'),
-    );
-    expect(imageNoteCall).toBeDefined();
+    const allNotes = appendDailyNote.mock.calls.flatMap((args) => (args[1] as string[]) ?? []);
+    const imageNote = allNotes.find((note) => String(note).startsWith('[user:image:photo]'));
+    expect(imageNote).toBeDefined();
 
-    const imageNote = String(imageNoteCall?.[1] ?? '');
-    const pathMatch = /\[file:([^\]]+)\]/.exec(imageNote);
+    const pathMatch = /\[file:([^\]]+)\]/.exec(imageNote ?? '');
     expect(pathMatch).not.toBeNull();
     const storedRelativePath = pathMatch?.[1] ?? '';
     const stored = await readFile(path.join(rootDir, storedRelativePath));
@@ -410,7 +607,7 @@ describe('telegram adapter', () => {
       },
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         downloadTelegramFile,
@@ -451,6 +648,133 @@ describe('telegram adapter', () => {
     expect(reply).toHaveBeenCalledWith('I can see a chart.');
   });
 
+  it('transcribes voice notes and runs the normal policy path', async () => {
+    const bot = makeFakeBot();
+    const appendJsonl = vi.fn().mockResolvedValue(undefined);
+    const appendDailyNote = vi.fn().mockResolvedValue('memory/2026-02-02.md');
+    const runPrime = vi.fn().mockResolvedValue({ finalOutput: 'voice reply' });
+    const loadFamilyConfig = vi.fn().mockResolvedValue(familyConfig);
+    const getScopeVectorStoreId = vi.fn().mockResolvedValue('vs_123');
+    const downloadTelegramFile = vi.fn().mockResolvedValue({
+      bytes: new Uint8Array([1, 2, 3]),
+      filePath: 'voice/file.ogg',
+    });
+    const transcribeVoiceNote = vi.fn().mockResolvedValue('hello from voice note');
+
+    createTelegramAdapter({
+      token: 'token',
+      rootDir: '/root',
+      bot,
+      fileMemory: fileMemoryConfig,
+      deps: {
+        appendJsonl,
+        appendLaneDailyNotesUnique: appendDailyNote,
+        runPrime,
+        loadFamilyConfig,
+        getScopeVectorStoreId,
+        downloadTelegramFile,
+        transcribeVoiceNote,
+      },
+    });
+
+    const reply = vi.fn().mockResolvedValue(undefined);
+    const ctx: TelegramContext = {
+      chat: { id: 123, type: 'private' },
+      message: {
+        message_id: 12,
+        voice: {
+          file_id: 'voice-file-1',
+          file_unique_id: 'voice-unique-1',
+          duration: 4,
+          mime_type: 'audio/ogg',
+          file_size: 1200,
+        },
+      },
+      from: { id: 456 },
+      reply,
+    };
+
+    const handler = bot.handlers.messageVoice;
+    if (!handler) throw new Error('voice handler not registered');
+
+    await handler(ctx);
+
+    expect(downloadTelegramFile).toHaveBeenCalledWith({
+      ctx,
+      token: 'token',
+      fileId: 'voice-file-1',
+    });
+    expect(transcribeVoiceNote).toHaveBeenCalledTimes(1);
+    expect(runPrime).toHaveBeenCalledWith(
+      'hello from voice note',
+      expect.objectContaining({
+        scopeId: 'telegram:dm:wags',
+        fileSearchEnabled: true,
+        allowedMemoryReadScopes: ['telegram:dm:wags'],
+        allowedMemoryWriteLanes: ['parent_private:wags'],
+      }),
+    );
+    expect(reply).toHaveBeenCalledWith('voice reply');
+  });
+
+  it('retries failed voice transcription and falls back clearly', async () => {
+    const bot = makeFakeBot();
+    const appendJsonl = vi.fn().mockResolvedValue(undefined);
+    const appendDailyNote = vi.fn().mockResolvedValue('memory/2026-02-02.md');
+    const runPrime = vi.fn().mockResolvedValue({ finalOutput: 'voice reply' });
+    const loadFamilyConfig = vi.fn().mockResolvedValue(familyConfig);
+    const getScopeVectorStoreId = vi.fn().mockResolvedValue('vs_123');
+    const downloadTelegramFile = vi.fn().mockResolvedValue({
+      bytes: new Uint8Array([1, 2, 3]),
+      filePath: 'voice/file.ogg',
+    });
+    const transcribeVoiceNote = vi.fn().mockRejectedValue(new Error('transcription unavailable'));
+
+    createTelegramAdapter({
+      token: 'token',
+      rootDir: '/root',
+      bot,
+      fileMemory: fileMemoryConfig,
+      deps: {
+        appendJsonl,
+        appendLaneDailyNotesUnique: appendDailyNote,
+        runPrime,
+        loadFamilyConfig,
+        getScopeVectorStoreId,
+        downloadTelegramFile,
+        transcribeVoiceNote,
+      },
+    });
+
+    const reply = vi.fn().mockResolvedValue(undefined);
+    const ctx: TelegramContext = {
+      chat: { id: 123, type: 'private' },
+      message: {
+        message_id: 13,
+        voice: {
+          file_id: 'voice-file-2',
+          file_unique_id: 'voice-unique-2',
+          duration: 4,
+          mime_type: 'audio/ogg',
+          file_size: 1200,
+        },
+      },
+      from: { id: 456 },
+      reply,
+    };
+
+    const handler = bot.handlers.messageVoice;
+    if (!handler) throw new Error('voice handler not registered');
+
+    await handler(ctx);
+
+    expect(transcribeVoiceNote).toHaveBeenCalledTimes(3);
+    expect(runPrime).not.toHaveBeenCalled();
+    expect(reply).toHaveBeenCalledWith(
+      'I couldn\'t transcribe that voice note right now. Please type your message or try another voice note.',
+    );
+  });
+
   it('reports indexing failures with a friendly hint', async () => {
     const bot = makeFakeBot();
     const appendJsonl = vi.fn().mockResolvedValue(undefined);
@@ -472,7 +796,7 @@ describe('telegram adapter', () => {
       fileMemory: fileMemoryConfig,
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         downloadTelegramFile,
@@ -546,7 +870,7 @@ describe('telegram adapter', () => {
       },
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         downloadTelegramFile,
@@ -605,7 +929,7 @@ describe('telegram adapter', () => {
       },
       deps: {
         appendJsonl,
-        appendScopedDailyNote: appendDailyNote,
+        appendLaneDailyNotesUnique: appendDailyNote,
         runPrime,
         loadFamilyConfig,
         downloadTelegramFile,
@@ -642,6 +966,772 @@ describe('telegram adapter', () => {
     expect(appendDailyNote).not.toHaveBeenCalled();
   });
 
+  it('handles /restart for parent dm by exiting with restart code', async () => {
+    const bot = makeFakeBot();
+    const appendJsonl = vi.fn().mockResolvedValue(undefined);
+    const appendDailyNote = vi.fn().mockResolvedValue('memory/2026-02-02.md');
+    const runPrime = vi.fn().mockResolvedValue({ finalOutput: 'ignored' });
+    const loadFamilyConfig = vi.fn().mockResolvedValue(familyConfig);
+
+    const exitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation((() => undefined as never) as (code?: string | number | null | undefined) => never);
+    const timeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((handler: unknown) => {
+      if (typeof handler === 'function') {
+        handler();
+      }
+      return 0 as unknown as NodeJS.Timeout;
+    }) as unknown as typeof setTimeout);
+
+    createTelegramAdapter({
+      token: 'token',
+      bot,
+      deps: { appendJsonl, appendLaneDailyNotesUnique: appendDailyNote, runPrime, loadFamilyConfig },
+    });
+
+    const reply = vi.fn().mockResolvedValue(undefined);
+    const ctx: TelegramContext = {
+      chat: { id: 1, type: 'private' },
+      message: { text: '/restart', message_id: 1 },
+      from: { id: 456 },
+      reply,
+    };
+
+    const handler = bot.handlers.messageText;
+    if (!handler) throw new Error('message handler not registered');
+
+    await handler(ctx);
+
+    expect(reply).toHaveBeenCalledWith('🔨 Building and restarting halo...');
+    expect(runPrime).not.toHaveBeenCalled();
+    expect(appendDailyNote).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(43);
+    expect(timeoutSpy).toHaveBeenCalled();
+
+    const eventTypes = appendJsonl.mock.calls.map(([, record]) => record.type);
+    expect(eventTypes).toContain('telegram.restart');
+    expect(eventTypes).not.toContain('prime.run.success');
+
+    exitSpy.mockRestore();
+    timeoutSpy.mockRestore();
+  });
+
+  it('denies /restart for child dm', async () => {
+    const bot = makeFakeBot();
+    const appendJsonl = vi.fn().mockResolvedValue(undefined);
+    const appendDailyNote = vi.fn().mockResolvedValue('memory/2026-02-02.md');
+    const runPrime = vi.fn().mockResolvedValue({ finalOutput: 'ignored' });
+    const loadFamilyConfig = vi.fn().mockResolvedValue(familyConfig);
+
+    const exitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation((() => undefined as never) as (code?: string | number | null | undefined) => never);
+
+    createTelegramAdapter({
+      token: 'token',
+      bot,
+      deps: { appendJsonl, appendLaneDailyNotesUnique: appendDailyNote, runPrime, loadFamilyConfig },
+    });
+
+    const reply = vi.fn().mockResolvedValue(undefined);
+    const ctx: TelegramContext = {
+      chat: { id: 1, type: 'private' },
+      message: { text: '/restart', message_id: 1 },
+      from: { id: 999 },
+      reply,
+    };
+
+    const handler = bot.handlers.messageText;
+    if (!handler) throw new Error('message handler not registered');
+
+    await handler(ctx);
+
+    expect(reply).toHaveBeenCalledWith('Restart is only available in parent DMs.');
+    expect(runPrime).not.toHaveBeenCalled();
+    expect(appendDailyNote).not.toHaveBeenCalled();
+    expect(exitSpy).not.toHaveBeenCalled();
+
+    exitSpy.mockRestore();
+  });
+
+  it('handles /onboard join spouse in parent dm with deterministic onboarding flow', async () => {
+    const bot = makeFakeBot();
+    const appendJsonl = vi.fn().mockResolvedValue(undefined);
+    const appendDailyNote = vi.fn().mockResolvedValue('memory/2026-02-02.md');
+    const runPrime = vi.fn().mockResolvedValue({ finalOutput: 'ignored' });
+    const loadFamilyConfig = vi.fn().mockResolvedValue(familyConfig);
+    const bootstrapParentOnboarding = vi.fn().mockResolvedValue({
+      outcome: 'already_bootstrapped',
+      onboarding: {
+        household: {
+          householdId: 'household-default',
+          displayName: 'Default household',
+          ownerMemberId: 'wags',
+          createdAt: '2026-02-17T10:00:00.000Z',
+        },
+        memberLinks: [
+          {
+            memberId: 'wags',
+            role: 'parent',
+            profileId: 'parent_default',
+            telegramUserId: 456,
+            linkedAt: '2026-02-17T10:00:00.000Z',
+            linkedByMemberId: 'wags',
+          },
+        ],
+        invites: [
+          {
+            inviteId: 'invite-parent-spouse_1-2002',
+            householdId: 'household-default',
+            role: 'parent',
+            profileId: 'parent_default',
+            issuedByMemberId: 'wags',
+            issuedAt: '2026-02-17T10:00:00.000Z',
+            expiresAt: '2026-02-24T10:00:00.000Z',
+            state: 'accepted',
+            acceptedAt: '2026-02-17T10:00:00.000Z',
+            acceptedByMemberId: 'spouse_1',
+            acceptedTelegramUserId: 2002,
+          },
+        ],
+        relinks: [],
+        scopeTerminology: {
+          dm: 'member DM',
+          parentsGroup: 'parents group',
+          familyGroup: 'family group',
+        },
+      },
+    });
+    const issueOnboardingInvite = vi.fn().mockResolvedValue({
+      outcome: 'issued',
+      onboarding: {
+        household: {
+          householdId: 'household-default',
+          displayName: 'Default household',
+          ownerMemberId: 'wags',
+          createdAt: '2026-02-17T10:00:00.000Z',
+        },
+        memberLinks: [
+          {
+            memberId: 'wags',
+            role: 'parent',
+            profileId: 'parent_default',
+            telegramUserId: 456,
+            linkedAt: '2026-02-17T10:00:00.000Z',
+            linkedByMemberId: 'wags',
+          },
+        ],
+        invites: [
+          {
+            inviteId: 'invite-parent-spouse_1-2002',
+            householdId: 'household-default',
+            role: 'parent',
+            profileId: 'parent_default',
+            issuedByMemberId: 'wags',
+            issuedAt: '2026-02-17T10:00:00.000Z',
+            expiresAt: '2026-02-24T10:00:00.000Z',
+            state: 'issued',
+          },
+        ],
+        relinks: [],
+        scopeTerminology: {
+          dm: 'member DM',
+          parentsGroup: 'parents group',
+          familyGroup: 'family group',
+        },
+      },
+    });
+    const acceptOnboardingInvite = vi.fn().mockResolvedValue({
+      outcome: 'joined',
+      onboarding: {
+        household: {
+          householdId: 'household-default',
+          displayName: 'Default household',
+          ownerMemberId: 'wags',
+          createdAt: '2026-02-17T10:00:00.000Z',
+        },
+        memberLinks: [
+          {
+            memberId: 'wags',
+            role: 'parent',
+            profileId: 'parent_default',
+            telegramUserId: 456,
+            linkedAt: '2026-02-17T10:00:00.000Z',
+            linkedByMemberId: 'wags',
+          },
+          {
+            memberId: 'spouse_1',
+            role: 'parent',
+            profileId: 'parent_default',
+            telegramUserId: 2002,
+            linkedAt: '2026-02-17T10:00:00.000Z',
+            linkedByMemberId: 'wags',
+          },
+        ],
+        invites: [
+          {
+            inviteId: 'invite-parent-spouse_1-2002',
+            householdId: 'household-default',
+            role: 'parent',
+            profileId: 'parent_default',
+            issuedByMemberId: 'wags',
+            issuedAt: '2026-02-17T10:00:00.000Z',
+            expiresAt: '2026-02-24T10:00:00.000Z',
+            state: 'accepted',
+            acceptedAt: '2026-02-17T10:00:00.000Z',
+            acceptedByMemberId: 'spouse_1',
+            acceptedTelegramUserId: 2002,
+          },
+        ],
+        relinks: [],
+        scopeTerminology: {
+          dm: 'member DM',
+          parentsGroup: 'parents group',
+          familyGroup: 'family group',
+        },
+      },
+    });
+
+    createTelegramAdapter({
+      token: 'token',
+      bot,
+      haloHome: '/tmp/halo-onboard-spouse',
+      now: () => new Date('2026-02-17T10:00:00.000Z'),
+      deps: {
+        appendJsonl,
+        appendLaneDailyNotesUnique: appendDailyNote,
+        runPrime,
+        loadFamilyConfig,
+        bootstrapParentOnboarding,
+        issueOnboardingInvite,
+        acceptOnboardingInvite,
+      },
+    });
+
+    const reply = vi.fn().mockResolvedValue(undefined);
+    const ctx: TelegramContext = {
+      chat: { id: 1, type: 'private' },
+      message: { text: '/onboard join spouse spouse_1 Spouse 2002', message_id: 1 },
+      from: { id: 456 },
+      reply,
+    };
+
+    const handler = bot.handlers.messageText;
+    if (!handler) throw new Error('message handler not registered');
+
+    await handler(ctx);
+
+    expect(bootstrapParentOnboarding).toHaveBeenCalledWith(
+      expect.objectContaining({
+        haloHome: '/tmp/halo-onboard-spouse',
+        ownerMemberId: 'wags',
+        ownerTelegramUserId: 456,
+      }),
+    );
+    expect(issueOnboardingInvite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        haloHome: '/tmp/halo-onboard-spouse',
+        inviteId: 'invite-parent-spouse_1-2002',
+        issuedByMemberId: 'wags',
+        role: 'parent',
+        profileId: 'parent_default',
+      }),
+    );
+    expect(acceptOnboardingInvite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        haloHome: '/tmp/halo-onboard-spouse',
+        inviteId: 'invite-parent-spouse_1-2002',
+        memberId: 'spouse_1',
+        displayName: 'Spouse',
+        telegramUserId: 2002,
+        linkedByMemberId: 'wags',
+      }),
+    );
+    expect(reply).toHaveBeenCalledWith(
+      'Onboarding join completed: spouse_1 joined as parent (joined).',
+    );
+    expect(runPrime).not.toHaveBeenCalled();
+    expect(appendDailyNote).not.toHaveBeenCalled();
+  });
+
+  it('handles /onboard join child with role-safe child defaults', async () => {
+    const bot = makeFakeBot();
+    const appendJsonl = vi.fn().mockResolvedValue(undefined);
+    const appendDailyNote = vi.fn().mockResolvedValue('memory/2026-02-02.md');
+    const runPrime = vi.fn().mockResolvedValue({ finalOutput: 'ignored' });
+    const loadFamilyConfig = vi.fn().mockResolvedValue(familyConfig);
+    const bootstrapParentOnboarding = vi.fn().mockResolvedValue({
+      outcome: 'already_bootstrapped',
+      onboarding: {
+        household: {
+          householdId: 'household-default',
+          displayName: 'Default household',
+          ownerMemberId: 'wags',
+          createdAt: '2026-02-17T10:00:00.000Z',
+        },
+        memberLinks: [
+          {
+            memberId: 'wags',
+            role: 'parent',
+            profileId: 'parent_default',
+            telegramUserId: 456,
+            linkedAt: '2026-02-17T10:00:00.000Z',
+            linkedByMemberId: 'wags',
+          },
+        ],
+        invites: [],
+        relinks: [],
+        scopeTerminology: {
+          dm: 'member DM',
+          parentsGroup: 'parents group',
+          familyGroup: 'family group',
+        },
+      },
+    });
+    const issueOnboardingInvite = vi.fn().mockResolvedValue({
+      outcome: 'issued',
+      onboarding: {
+        household: {
+          householdId: 'household-default',
+          displayName: 'Default household',
+          ownerMemberId: 'wags',
+          createdAt: '2026-02-17T10:00:00.000Z',
+        },
+        memberLinks: [
+          {
+            memberId: 'wags',
+            role: 'parent',
+            profileId: 'parent_default',
+            telegramUserId: 456,
+            linkedAt: '2026-02-17T10:00:00.000Z',
+            linkedByMemberId: 'wags',
+          },
+        ],
+        invites: [
+          {
+            inviteId: 'invite-child-kid_2-3003',
+            householdId: 'household-default',
+            role: 'child',
+            profileId: 'young_child',
+            issuedByMemberId: 'wags',
+            issuedAt: '2026-02-17T10:00:00.000Z',
+            expiresAt: '2026-02-24T10:00:00.000Z',
+            state: 'issued',
+          },
+        ],
+        relinks: [],
+        scopeTerminology: {
+          dm: 'member DM',
+          parentsGroup: 'parents group',
+          familyGroup: 'family group',
+        },
+      },
+    });
+    const acceptOnboardingInvite = vi.fn().mockResolvedValue({
+      outcome: 'joined',
+      onboarding: {
+        household: {
+          householdId: 'household-default',
+          displayName: 'Default household',
+          ownerMemberId: 'wags',
+          createdAt: '2026-02-17T10:00:00.000Z',
+        },
+        memberLinks: [
+          {
+            memberId: 'wags',
+            role: 'parent',
+            profileId: 'parent_default',
+            telegramUserId: 456,
+            linkedAt: '2026-02-17T10:00:00.000Z',
+            linkedByMemberId: 'wags',
+          },
+          {
+            memberId: 'kid_2',
+            role: 'child',
+            profileId: 'young_child',
+            telegramUserId: 3003,
+            linkedAt: '2026-02-17T10:00:00.000Z',
+            linkedByMemberId: 'wags',
+          },
+        ],
+        invites: [
+          {
+            inviteId: 'invite-child-kid_2-3003',
+            householdId: 'household-default',
+            role: 'child',
+            profileId: 'young_child',
+            issuedByMemberId: 'wags',
+            issuedAt: '2026-02-17T10:00:00.000Z',
+            expiresAt: '2026-02-24T10:00:00.000Z',
+            state: 'accepted',
+            acceptedAt: '2026-02-17T10:00:00.000Z',
+            acceptedByMemberId: 'kid_2',
+            acceptedTelegramUserId: 3003,
+          },
+        ],
+        relinks: [],
+        scopeTerminology: {
+          dm: 'member DM',
+          parentsGroup: 'parents group',
+          familyGroup: 'family group',
+        },
+      },
+    });
+
+    createTelegramAdapter({
+      token: 'token',
+      bot,
+      haloHome: '/tmp/halo-onboard-child',
+      now: () => new Date('2026-02-17T10:00:00.000Z'),
+      deps: {
+        appendJsonl,
+        appendLaneDailyNotesUnique: appendDailyNote,
+        runPrime,
+        loadFamilyConfig,
+        bootstrapParentOnboarding,
+        issueOnboardingInvite,
+        acceptOnboardingInvite,
+      },
+    });
+
+    const reply = vi.fn().mockResolvedValue(undefined);
+    const ctx: TelegramContext = {
+      chat: { id: 1, type: 'private' },
+      message: { text: '/onboard join child kid_2 Kid 3003 teen true', message_id: 1 },
+      from: { id: 456 },
+      reply,
+    };
+
+    const handler = bot.handlers.messageText;
+    if (!handler) throw new Error('message handler not registered');
+
+    await handler(ctx);
+
+    expect(issueOnboardingInvite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        haloHome: '/tmp/halo-onboard-child',
+        inviteId: 'invite-child-kid_2-3003',
+        role: 'child',
+        profileId: 'young_child',
+      }),
+    );
+    expect(acceptOnboardingInvite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        haloHome: '/tmp/halo-onboard-child',
+        inviteId: 'invite-child-kid_2-3003',
+        memberId: 'kid_2',
+        telegramUserId: 3003,
+        ageGroup: 'teen',
+        parentalVisibility: true,
+      }),
+    );
+    expect(reply).toHaveBeenCalledWith(
+      'Onboarding join completed: kid_2 joined as child (joined).',
+    );
+    expect(runPrime).not.toHaveBeenCalled();
+    expect(appendDailyNote).not.toHaveBeenCalled();
+  });
+
+  it('rejects /onboard join child when ageGroup is missing', async () => {
+    const bot = makeFakeBot();
+    const appendJsonl = vi.fn().mockResolvedValue(undefined);
+    const appendDailyNote = vi.fn().mockResolvedValue('memory/2026-02-02.md');
+    const runPrime = vi.fn().mockResolvedValue({ finalOutput: 'ignored' });
+    const loadFamilyConfig = vi.fn().mockResolvedValue(familyConfig);
+    const bootstrapParentOnboarding = vi.fn().mockResolvedValue({
+      outcome: 'already_bootstrapped',
+      onboarding: {},
+    });
+    const issueOnboardingInvite = vi.fn().mockResolvedValue({
+      outcome: 'issued',
+      onboarding: {},
+    });
+    const acceptOnboardingInvite = vi.fn().mockResolvedValue({
+      outcome: 'joined',
+      onboarding: { invites: [] },
+    });
+
+    createTelegramAdapter({
+      token: 'token',
+      bot,
+      haloHome: '/tmp/halo-onboard-child-missing-age',
+      now: () => new Date('2026-02-17T10:00:00.000Z'),
+      deps: {
+        appendJsonl,
+        appendLaneDailyNotesUnique: appendDailyNote,
+        runPrime,
+        loadFamilyConfig,
+        bootstrapParentOnboarding,
+        issueOnboardingInvite,
+        acceptOnboardingInvite,
+      },
+    });
+
+    const reply = vi.fn().mockResolvedValue(undefined);
+    const ctx: TelegramContext = {
+      chat: { id: 1, type: 'private' },
+      message: { text: '/onboard join child kid_3 Kid 3004', message_id: 1 },
+      from: { id: 456 },
+      reply,
+    };
+
+    const handler = bot.handlers.messageText;
+    if (!handler) throw new Error('message handler not registered');
+
+    await handler(ctx);
+
+    expect(reply).toHaveBeenCalledWith(
+      'Onboarding command failed: Child join requires ageGroup (child|teen|young_adult).',
+    );
+    expect(bootstrapParentOnboarding).not.toHaveBeenCalled();
+    expect(issueOnboardingInvite).not.toHaveBeenCalled();
+    expect(acceptOnboardingInvite).not.toHaveBeenCalled();
+    expect(runPrime).not.toHaveBeenCalled();
+    expect(appendDailyNote).not.toHaveBeenCalled();
+  });
+
+  it('handles /onboard join parent with parent role mapping', async () => {
+    const bot = makeFakeBot();
+    const appendJsonl = vi.fn().mockResolvedValue(undefined);
+    const appendDailyNote = vi.fn().mockResolvedValue('memory/2026-02-02.md');
+    const runPrime = vi.fn().mockResolvedValue({ finalOutput: 'ignored' });
+    const loadFamilyConfig = vi.fn().mockResolvedValue(familyConfig);
+    const bootstrapParentOnboarding = vi.fn().mockResolvedValue({
+      outcome: 'already_bootstrapped',
+      onboarding: {},
+    });
+    const issueOnboardingInvite = vi.fn().mockResolvedValue({
+      outcome: 'issued',
+      onboarding: {},
+    });
+    const acceptOnboardingInvite = vi.fn().mockResolvedValue({
+      outcome: 'joined',
+      onboarding: {
+        invites: [
+          {
+            inviteId: 'invite-parent-co_parent-4004',
+            role: 'parent',
+          },
+        ],
+      },
+    });
+
+    createTelegramAdapter({
+      token: 'token',
+      bot,
+      haloHome: '/tmp/halo-onboard-parent',
+      now: () => new Date('2026-02-17T10:00:00.000Z'),
+      deps: {
+        appendJsonl,
+        appendLaneDailyNotesUnique: appendDailyNote,
+        runPrime,
+        loadFamilyConfig,
+        bootstrapParentOnboarding,
+        issueOnboardingInvite,
+        acceptOnboardingInvite,
+      },
+    });
+
+    const reply = vi.fn().mockResolvedValue(undefined);
+    const ctx: TelegramContext = {
+      chat: { id: 1, type: 'private' },
+      message: { text: '/onboard join parent co_parent CoParent 4004', message_id: 1 },
+      from: { id: 456 },
+      reply,
+    };
+
+    const handler = bot.handlers.messageText;
+    if (!handler) throw new Error('message handler not registered');
+
+    await handler(ctx);
+
+    expect(issueOnboardingInvite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        haloHome: '/tmp/halo-onboard-parent',
+        inviteId: 'invite-parent-co_parent-4004',
+        role: 'parent',
+        profileId: 'parent_default',
+      }),
+    );
+    expect(acceptOnboardingInvite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        haloHome: '/tmp/halo-onboard-parent',
+        inviteId: 'invite-parent-co_parent-4004',
+        memberId: 'co_parent',
+        telegramUserId: 4004,
+      }),
+    );
+    expect(reply).toHaveBeenCalledWith(
+      'Onboarding join completed: co_parent joined as parent (joined).',
+    );
+    expect(runPrime).not.toHaveBeenCalled();
+    expect(appendDailyNote).not.toHaveBeenCalled();
+  });
+
+  it('denies onboarding commands outside parent dm context', async () => {
+    const bot = makeFakeBot();
+    const appendJsonl = vi.fn().mockResolvedValue(undefined);
+    const appendDailyNote = vi.fn().mockResolvedValue('memory/2026-02-02.md');
+    const runPrime = vi.fn().mockResolvedValue({ finalOutput: 'ignored' });
+    const loadFamilyConfig = vi.fn().mockResolvedValue(familyConfig);
+    const bootstrapParentOnboarding = vi.fn().mockResolvedValue({
+      outcome: 'already_bootstrapped',
+      onboarding: {},
+    });
+    const issueOnboardingInvite = vi.fn().mockResolvedValue({
+      outcome: 'issued',
+      onboarding: {},
+    });
+    const acceptOnboardingInvite = vi.fn().mockResolvedValue({
+      outcome: 'joined',
+      onboarding: { invites: [] },
+    });
+
+    createTelegramAdapter({
+      token: 'token',
+      bot,
+      deps: {
+        appendJsonl,
+        appendLaneDailyNotesUnique: appendDailyNote,
+        runPrime,
+        loadFamilyConfig,
+        bootstrapParentOnboarding,
+        issueOnboardingInvite,
+        acceptOnboardingInvite,
+      },
+    });
+
+    const reply = vi.fn().mockResolvedValue(undefined);
+    const ctx: TelegramContext = {
+      chat: { id: 1, type: 'private' },
+      message: { text: '/onboard join child kid_3 Kid 3003 child true', message_id: 1 },
+      from: { id: 999 },
+      reply,
+    };
+
+    const handler = bot.handlers.messageText;
+    if (!handler) throw new Error('message handler not registered');
+
+    await handler(ctx);
+
+    expect(reply).toHaveBeenCalledWith('Onboarding commands are only available in parent DMs.');
+    expect(bootstrapParentOnboarding).not.toHaveBeenCalled();
+    expect(issueOnboardingInvite).not.toHaveBeenCalled();
+    expect(acceptOnboardingInvite).not.toHaveBeenCalled();
+    expect(runPrime).not.toHaveBeenCalled();
+    expect(appendDailyNote).not.toHaveBeenCalled();
+  });
+
+  it('refreshes family config after onboarding updates so newly joined users are recognized', async () => {
+    const bot = makeFakeBot();
+    const appendJsonl = vi.fn().mockResolvedValue(undefined);
+    const appendDailyNote = vi.fn().mockResolvedValue('memory/2026-02-02.md');
+    const runPrime = vi.fn().mockResolvedValue({ finalOutput: 'welcome kid' });
+
+    const initialFamilyConfig = {
+      ...familyConfig,
+      members: [
+        {
+          memberId: 'wags',
+          displayName: 'Wags',
+          role: 'parent' as const,
+          telegramUserIds: [456],
+        },
+      ],
+    };
+
+    const updatedFamilyConfig = {
+      ...familyConfig,
+      members: [
+        {
+          memberId: 'wags',
+          displayName: 'Wags',
+          role: 'parent' as const,
+          telegramUserIds: [456],
+        },
+        {
+          memberId: 'kid_3',
+          displayName: 'Kid',
+          role: 'child' as const,
+          ageGroup: 'teen' as const,
+          telegramUserIds: [3003],
+        },
+      ],
+    };
+
+    const loadFamilyConfig = vi
+      .fn()
+      .mockResolvedValueOnce(initialFamilyConfig)
+      .mockResolvedValue(updatedFamilyConfig);
+
+    const bootstrapParentOnboarding = vi.fn().mockResolvedValue({
+      outcome: 'already_bootstrapped',
+      onboarding: {},
+    });
+    const issueOnboardingInvite = vi.fn().mockResolvedValue({
+      outcome: 'issued',
+      onboarding: {},
+    });
+    const acceptOnboardingInvite = vi.fn().mockResolvedValue({
+      outcome: 'joined',
+      onboarding: {
+        invites: [
+          {
+            inviteId: 'invite-child-kid_3-3003',
+            role: 'child',
+          },
+        ],
+      },
+    });
+
+    createTelegramAdapter({
+      token: 'token',
+      bot,
+      haloHome: '/tmp/halo-onboard-refresh',
+      now: () => new Date('2026-02-17T10:00:00.000Z'),
+      deps: {
+        appendJsonl,
+        appendLaneDailyNotesUnique: appendDailyNote,
+        runPrime,
+        loadFamilyConfig,
+        bootstrapParentOnboarding,
+        issueOnboardingInvite,
+        acceptOnboardingInvite,
+      },
+    });
+
+    const handler = bot.handlers.messageText;
+    if (!handler) throw new Error('message handler not registered');
+
+    const onboardingReply = vi.fn().mockResolvedValue(undefined);
+    await handler({
+      chat: { id: 1, type: 'private' },
+      message: { text: '/onboard join child kid_3 Kid 3003 teen true', message_id: 1 },
+      from: { id: 456 },
+      reply: onboardingReply,
+    });
+
+    const childReply = vi.fn().mockResolvedValue(undefined);
+    await handler({
+      chat: { id: 1, type: 'private' },
+      message: { text: 'hello after join', message_id: 2 },
+      from: { id: 3003 },
+      reply: childReply,
+    });
+
+    expect(loadFamilyConfig).toHaveBeenCalledTimes(2);
+    expect(runPrime).toHaveBeenCalledWith(
+      'hello after join',
+      expect.objectContaining({
+        userId: '3003',
+        scopeId: 'telegram:dm:kid_3',
+        role: 'child',
+        ageGroup: 'teen',
+      }),
+    );
+    expect(childReply).toHaveBeenCalledWith('welcome kid');
+  });
+
   it('refuses unknown private messages without running Prime', async () => {
     const bot = makeFakeBot();
     const appendJsonl = vi.fn().mockResolvedValue(undefined);
@@ -652,7 +1742,7 @@ describe('telegram adapter', () => {
     createTelegramAdapter({
       token: 'token',
       bot,
-      deps: { appendJsonl, appendScopedDailyNote: appendDailyNote, runPrime, loadFamilyConfig },
+      deps: { appendJsonl, appendLaneDailyNotesUnique: appendDailyNote, runPrime, loadFamilyConfig },
     });
 
     const reply = vi.fn().mockResolvedValue(undefined);
@@ -683,7 +1773,7 @@ describe('telegram adapter', () => {
     createTelegramAdapter({
       token: 'token',
       bot,
-      deps: { appendJsonl, appendScopedDailyNote: appendDailyNote, runPrime, loadFamilyConfig },
+      deps: { appendJsonl, appendLaneDailyNotesUnique: appendDailyNote, runPrime, loadFamilyConfig },
     });
 
     const reply = vi.fn().mockResolvedValue(undefined);
@@ -702,5 +1792,137 @@ describe('telegram adapter', () => {
     expect(runPrime).not.toHaveBeenCalled();
     expect(appendDailyNote).not.toHaveBeenCalled();
     expect(reply).not.toHaveBeenCalled();
+  });
+
+  describe('resolveFamilyGroupChatId', () => {
+    it('returns null for v1 config with no controlPlane', () => {
+      expect(resolveFamilyGroupChatId(familyConfig as unknown as FamilyConfig)).toBeNull();
+    });
+
+    it('returns null for v2 config with no family_group scope', () => {
+      const config = {
+        ...familyConfigWithFamilyGroup,
+        controlPlane: {
+          ...familyConfigWithFamilyGroup.controlPlane,
+          scopes: [
+            {
+              scopeId: 'scope-parents-group',
+              scopeType: 'parents_group' as const,
+              telegramChatId: 777,
+            },
+          ],
+        },
+      } as unknown as FamilyConfig;
+      expect(resolveFamilyGroupChatId(config)).toBeNull();
+    });
+
+    it('returns telegramChatId for v2 config with family_group scope', () => {
+      expect(resolveFamilyGroupChatId(familyConfigWithFamilyGroup as unknown as FamilyConfig)).toBe(888);
+    });
+
+    it('returns null when family_group scope has null telegramChatId', () => {
+      const config = {
+        ...familyConfigWithFamilyGroup,
+        controlPlane: {
+          ...familyConfigWithFamilyGroup.controlPlane,
+          scopes: [
+            {
+              scopeId: 'scope-family-group',
+              scopeType: 'family_group' as const,
+              telegramChatId: null,
+            },
+          ],
+        },
+      } as unknown as FamilyConfig;
+      expect(resolveFamilyGroupChatId(config)).toBeNull();
+    });
+  });
+
+  it('writes daily notes via appendLaneDailyNotesUnique for each write lane', async () => {
+    const bot = makeFakeBot();
+    const appendJsonl = vi.fn().mockResolvedValue(undefined);
+    const appendLaneDailyNotesUnique = vi.fn().mockResolvedValue({ path: 'lane/2026-02-02.md', appendedCount: 1 });
+    const runPrime = vi.fn().mockResolvedValue({ finalOutput: 'lane reply' });
+    const loadFamilyConfig = vi.fn().mockResolvedValue(familyConfig);
+    const getScopeVectorStoreId = vi.fn().mockResolvedValue(null);
+    const now = () => new Date('2026-02-02T00:00:00.000Z');
+
+    createTelegramAdapter({
+      token: 'token',
+      rootDir: '/root',
+      bot,
+      now,
+      fileMemory: { ...fileMemoryConfig, enabled: false },
+      deps: {
+        appendJsonl,
+        appendLaneDailyNotesUnique,
+        runPrime,
+        loadFamilyConfig,
+        getScopeVectorStoreId,
+      },
+    });
+
+    const reply = vi.fn().mockResolvedValue(undefined);
+    const ctx: TelegramContext = {
+      chat: { id: 123, type: 'private' },
+      message: { text: 'hello lanes', message_id: 7 },
+      from: { id: 456 },
+      reply,
+    };
+
+    const handler = bot.handlers.messageText;
+    if (!handler) throw new Error('message handler not registered');
+
+    await handler(ctx);
+
+    // Should have called appendLaneDailyNotesUnique for each write lane
+    expect(appendLaneDailyNotesUnique).toHaveBeenCalled();
+    const calls = appendLaneDailyNotesUnique.mock.calls;
+    const allNotes = calls.map((args) => (args[1] as string[]) ?? []).flat();
+    expect(allNotes.some((note) => note.includes('[user]'))).toBe(true);
+    expect(allNotes.some((note) => note.includes('[prime]'))).toBe(true);
+  });
+
+  it('passes policy.modelPlan.model to runPrime for text messages', async () => {
+    const bot = makeFakeBot();
+    const appendJsonl = vi.fn().mockResolvedValue(undefined);
+    const appendDailyNote = vi.fn().mockResolvedValue('memory/2026-02-02.md');
+    const runPrime = vi.fn().mockResolvedValue({ finalOutput: 'hi there' });
+    const loadFamilyConfig = vi.fn().mockResolvedValue(familyConfig);
+    const getScopeVectorStoreId = vi.fn().mockResolvedValue(null);
+    const now = () => new Date('2026-02-02T00:00:00.000Z');
+
+    createTelegramAdapter({
+      token: 'token',
+      logDir: 'logs',
+      rootDir: '/root',
+      bot,
+      now,
+      fileMemory: { ...fileMemoryConfig, enabled: false },
+      deps: {
+        appendJsonl,
+        appendLaneDailyNotesUnique: appendDailyNote,
+        runPrime,
+        loadFamilyConfig,
+        getScopeVectorStoreId,
+      },
+    });
+
+    const reply = vi.fn().mockResolvedValue(undefined);
+    const ctx: TelegramContext = {
+      chat: { id: 123, type: 'private' },
+      message: { text: 'hello', message_id: 7 },
+      from: { id: 456 },
+      reply,
+    };
+
+    const handler = bot.handlers.messageText;
+    if (!handler) throw new Error('message handler not registered');
+
+    await handler(ctx);
+
+    expect(runPrime).toHaveBeenCalledWith('hello', expect.objectContaining({
+      model: 'gpt-4.1',
+    }));
   });
 });

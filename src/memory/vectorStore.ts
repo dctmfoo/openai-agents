@@ -15,7 +15,7 @@ export type VectorStoreConfig = {
   vecExtensionPath?: string;
 };
 
-export type VectorSearchResult = {
+type VectorSearchResult = {
   chunkIdx: number;
   distance: number;
   content: string;
@@ -25,7 +25,7 @@ export type VectorSearchResult = {
   lastAccessedAt: number | null;
 };
 
-export type TextSearchResult = {
+type TextSearchResult = {
   chunkIdx: number;
   score: number;
   content: string;
@@ -35,7 +35,7 @@ export type TextSearchResult = {
   lastAccessedAt: number | null;
 };
 
-export type ChunkInsertInput = {
+type ChunkInsertInput = {
   chunkId: string;
   path: string;
   startLine: number;

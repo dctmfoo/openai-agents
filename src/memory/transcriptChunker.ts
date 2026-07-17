@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { buildLaneStorageMetadata, type LaneStorageMetadata } from './laneTopology.js';
 
 type TranscriptItem = {
   type?: string;
@@ -29,6 +30,7 @@ type TranscriptChunk = {
   endLine: number;
   text: string;
   tokenEstimate: number;
+  metadata: LaneStorageMetadata;
 };
 
 type TranscriptChunkerOptions = {
@@ -38,6 +40,9 @@ type TranscriptChunkerOptions = {
   targetTokens?: number;
   minTokens?: number;
   maxTokens?: number;
+  laneId?: string;
+  ownerMemberId?: string | null;
+  policyVersion?: string;
 };
 
 const DEFAULT_TARGET_TOKENS = 300;
@@ -231,6 +236,14 @@ function chunkTranscriptItems(options: TranscriptChunkerOptions): TranscriptChun
     const tokenEstimate = estimateTokens(text);
 
     const id = buildTranscriptChunkId(options.scopeId, startLine, endLine, text);
+    const metadata = buildLaneStorageMetadata({
+      laneId: options.laneId?.trim() || 'system_audit',
+      ownerMemberId: options.ownerMemberId ?? null,
+      scopeId: options.scopeId,
+      policyVersion: options.policyVersion?.trim() || 'unknown',
+      artifactType: 'chunk',
+    });
+
     chunks.push({
       id,
       path: options.path,
@@ -238,6 +251,7 @@ function chunkTranscriptItems(options: TranscriptChunkerOptions): TranscriptChun
       endLine,
       text,
       tokenEstimate,
+      metadata,
     });
 
     buffer = [];

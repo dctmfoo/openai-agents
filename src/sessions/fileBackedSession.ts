@@ -6,7 +6,7 @@ import { getHaloHome } from '../runtime/haloHome.js';
 import { sanitizeSessionItems } from './sanitizeSessionItems.js';
 import { hashSessionId } from './sessionHash.js';
 
-export type FileBackedSessionOptions = {
+type FileBackedSessionOptions = {
   sessionId?: string;
   /** Optional override for tests. */
   baseDir?: string;
