@@ -151,12 +151,20 @@ Quality bar:
 
 See [docs/PROJECT-OVERVIEW.md](docs/PROJECT-OVERVIEW.md) for current milestone and feature status.
 
-## Docs MCP
+## Docs MCP (authoritative OpenAI docs loop — required)
 
-Always use the OpenAI developer documentation MCP server if you need to work with the OpenAI API, Agents SDK, Codex, etc., without me having to explicitly ask.
+Always use the OpenAI developer documentation MCP server whenever work touches OpenAI APIs/SDK behavior (models, tools, Responses API, Agents SDK semantics, etc.).
 
 - MCP name: `openaiDeveloperDocs`
 - URL: https://developers.openai.com/mcp
+
+Required workflow:
+1. Query docs first (before designing or coding) for the exact feature/behavior being changed.
+2. Capture at least one canonical reference in your plan/PR notes (doc URL + short takeaway).
+3. If behavior is ambiguous, verify with a minimal reproducible API probe and record both docs + probe evidence.
+4. Do not rely on memory or assumptions for SDK defaults/model-tool compatibility.
+
+If MCP is unavailable, explicitly state that as a blocker in your handoff and avoid presenting uncertain claims as facts.
 
 ## Dead Code / Unused Exports (knip)
 

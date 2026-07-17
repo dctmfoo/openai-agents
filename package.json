@@ -6,6 +6,8 @@
   "main": "dist/index.js",
   "scripts": {
     "dev:telegram": "tsx src/interfaces/telegram/start.ts",
+    "dev:gateway": "tsx src/gateway/start.ts",
+    "dev:gateway:supervised": "bash scripts/dev/gateway-wrapper.sh",
     "dev:cli": "tsx src/interfaces/cli/run.ts",
     "build": "tsc -p tsconfig.json",
     "start:telegram": "node dist/interfaces/telegram/start.js",

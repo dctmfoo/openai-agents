@@ -22,9 +22,27 @@
 - Group chats are ignored unless the group ID matches `parentsGroup.telegramChatId`.
 - Family config is loaded at startup. Restart after changing `family.json`.
 
+## Shell tool errors
+
+- `Tool 'shell' is not supported with gpt-4.1`: this model does not support the hosted shell tool.
+  - Prime auto-selects `gpt-5.1` when shell is enabled.
+  - Optional overrides:
+    - `PRIME_MODEL` (global)
+    - `PRIME_SHELL_MODEL` (only when shell is present)
+
+## Restart command behavior
+
+- `/restart` or `/br` exits the runtime with code `43` (parent DM only).
+- To auto-build and come back up, run gateway under supervisor:
+  - `pnpm dev:gateway:supervised`
+  - or `make gateway-supervised`
+- If you run plain `pnpm dev:gateway`, `/restart` will stop the process but will not auto-restart.
+
 ## Logs and diagnostics
 
-- Telegram and Gateway logs: `HALO_HOME/logs/events.jsonl`
+- Structured event logs: `HALO_HOME/logs/events.jsonl`
+- Runtime operational logs: `HALO_HOME/logs/runtime.jsonl`
+- Local tail helper: `make logs`
 
 Admin tail endpoints (loopback-only):
 

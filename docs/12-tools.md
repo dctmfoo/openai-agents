@@ -23,6 +23,8 @@ Shell access is deny-by-default with three gates:
 
 Allowlisting `"gog"` (or any other command name) in tool policy does **not** enable shell execution. The tool name is always `"shell"`; command-level control happens only via regex patterns.
 
+Model note: OpenAI rejects `shell` on `gpt-4.1`. Prime now auto-selects `gpt-5.1` whenever shell is available unless you override with `PRIME_MODEL` (global) or `PRIME_SHELL_MODEL` (shell-only).
+
 ## Registering a tool
 
 1. Implement the tool in `src/tools/`. Use `tool(...)` for local tools or `HostedTool` for OpenAI hosted tools.

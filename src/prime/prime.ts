@@ -77,6 +77,20 @@ const buildToolInstructions = (toolNames: string[]) => {
   return instructions;
 };
 
+const resolvePrimeModel = (toolNames: string[]): string | undefined => {
+  const explicitModel = process.env.PRIME_MODEL?.trim();
+  if (explicitModel) {
+    return explicitModel;
+  }
+
+  if (toolNames.includes(TOOL_NAMES.shell)) {
+    const shellModel = process.env.PRIME_SHELL_MODEL?.trim();
+    return shellModel || 'gpt-5.1';
+  }
+
+  return undefined;
+};
+
 type PrimeInstructionOptions = {
   role?: 'parent' | 'child';
   ageGroup?: 'child' | 'teen' | 'young_adult';
@@ -144,7 +158,9 @@ async function makePrimeAgent(context: PrimeContext) {
     .join('\n');
 
   const tools = buildPrimeTools(context);
-  const toolInstructions = buildToolInstructions(tools.map((tool) => tool.name));
+  const toolNames = tools.map((tool) => tool.name);
+  const toolInstructions = buildToolInstructions(toolNames);
+  const model = resolvePrimeModel(toolNames);
   const modelSettings =
     context.contextMode === 'light'
       ? { maxTokens: 220 }
@@ -158,6 +174,7 @@ async function makePrimeAgent(context: PrimeContext) {
       toolInstructions,
       contextBlock,
     }),
+    ...(model ? { model } : {}),
     tools,
     ...(modelSettings ? { modelSettings } : {}),
   });
