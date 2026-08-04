@@ -27,24 +27,24 @@
   "license": "ISC",
   "packageManager": "pnpm@10.28.1",
   "dependencies": {
-    "@openai/agents": "^0.9.0",
-    "better-sqlite3": "^12.6.2",
+    "@openai/agents": "^0.14.2",
+    "better-sqlite3": "^13.0.2",
     "dotenv": "^17.2.3",
     "grammy": "^1.39.3",
-    "openai": "^6.17.0",
+    "openai": "^7.3.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^25.2.0",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.1.2",
     "@typescript-eslint/parser": "^8.42.0",
     "eslint": "^10.3.0",
     "eslint-plugin-sonarjs": "^4.0.3",
     "globals": "^17.6.0",
-    "jscpd": "^4.0.0",
+    "jscpd": "^5.0.14",
     "knip": "^6.11.0",
     "tsx": "^4.21.0",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.0.18"
   }
 }
